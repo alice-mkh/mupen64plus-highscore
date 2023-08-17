@@ -1,0 +1,7 @@
+[Highscore]
+Name=Mupen64Plus
+Module=mupen64plus/libmupen64plus-highscore.so
+Copyright=Copyright (C) 2002 Hacktarux;Copyright (C) 2007-2014 The Mupen64Plus Development Team;
+Website=https://mupen64plus.org/
+License=GPL-2.0-only
+Platforms=Nintendo64;
