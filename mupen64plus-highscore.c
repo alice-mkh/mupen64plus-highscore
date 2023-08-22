@@ -241,7 +241,6 @@ video_toggle_fs (void)
 m64p_error
 video_resize_window (int width, int height)
 {
-  g_print ("resize window\n");
   return M64ERR_UNSUPPORTED;
 }
 
@@ -508,7 +507,8 @@ try_migrate_libretro_save (Mupen64PlusCore  *self,
 
   // All done
   g_autofree char *backup_path = g_file_get_path (backup_file);
-  g_message ("Libretro save file migrated successfully. A backup has been made in %s", backup_path);
+  g_autofree char *message = g_strdup_printf ("Libretro save file migrated successfully. A backup has been made in %s", backup_path);
+  hs_core_log (HS_CORE (self), HS_LOG_MESSAGE, message);
 
   return TRUE;
 }
@@ -703,22 +703,22 @@ mupen64plus_core_stop (HsCore *core)
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   if (CoreDoCommand (M64CMD_STOP, 0, NULL) != M64ERR_SUCCESS)
-    g_critical ("Failed to stop core");
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to stop core");
 
   g_clear_pointer (&self->emulation_thread, g_thread_join);
   g_clear_object (&self->context);
 
   if (CoreDoCommand (M64CMD_ROM_CLOSE, 0, NULL) != M64ERR_SUCCESS)
-    g_critical ("Failed to close ROM");
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to close ROM");
 
   if (gliden64PluginShutdown () != M64ERR_SUCCESS)
-    g_critical ("Failed to shut down GFX plugin");
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to shut down GFX plugin");
 
   if (hlePluginShutdown () != M64ERR_SUCCESS)
-    g_critical ("Failed to shut down RSP plugin");
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to shut down RSP plugin");
 
   if (CoreShutdown () != M64ERR_SUCCESS)
-    g_critical ("Failed to shut down the core");
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to shut down the core");
 }
 
 static void
