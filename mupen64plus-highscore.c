@@ -73,6 +73,12 @@ debug_callback (gpointer context, int level, const char *message)
     return;
   }
 
+  // These are similarly harmless and not something we care about.
+  if (g_str_equal (message, "No version number in 'Core' config section. Setting defaults.") ||
+      g_str_equal (message, "No version number in 'CoreEvents' config section. Setting defaults.")) {
+    return;
+  }
+
   HsLogLevel hs_level;
 
   switch (level) {
