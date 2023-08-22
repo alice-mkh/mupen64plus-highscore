@@ -7,11 +7,10 @@
 #include "api/m64p_frontend.h"
 #include "api/m64p_plugin.h"
 #include "api/m64p_types.h"
-// Needed for ROM_PARAMS.systemtype and ROM_PARAMS.headername
-#include "main/rom.h"
 // Needed for manually attaching plugins
 #include "plugin/plugin.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -42,6 +41,7 @@ struct _Mupen64PlusCore
   BUTTONS button_state[4];
   GMutex input_mutex;
 
+  m64p_rom_header rom_header;
   m64p_rom_settings rom_settings;
 
   // Access only with g_atomic_int_*()
@@ -381,6 +381,23 @@ string_replace_chars (char* str, const char* chars, const char r)
 }
 
 static char *
+string_trim (char *str)
+{
+  char *start = str, *end = str + strlen(str);
+
+  while (start < end && isspace((unsigned char)(*start)))
+    start++;
+
+  while (end > start && isspace((unsigned char)(*(end-1))))
+    end--;
+
+  memmove(str, start, end - start);
+  str[end - start] = '\0';
+
+  return str;
+}
+
+static char *
 get_save_filename (Mupen64PlusCore *self)
 {
   char *filename = g_new0 (char, 256);
@@ -389,13 +406,18 @@ get_save_filename (Mupen64PlusCore *self)
   ConfigOpenSection ("Core", &config);
   int format = ConfigGetParamInt (config, "SaveFilenameFormat");
 
+  char header_name[21];
+  memcpy (header_name, self->rom_header.Name, 20);
+  header_name[20] = '\0';
+  string_trim (header_name); /* Remove trailing whitespace from ROM name. */
+
   if (format == 0) {
-    snprintf (filename, 256, "%s", ROM_PARAMS.headername);
+    snprintf (filename, 256, "%s", header_name);
   } else /* if (format == 1) */ {
-    if (strstr (ROM_SETTINGS.goodname, "(unknown rom)") == NULL) {
+    if (strstr (self->rom_settings.goodname, "(unknown rom)") == NULL) {
       snprintf (filename, 256, "%.32s-%.8s", self->rom_settings.goodname, self->rom_settings.MD5);
-    } else if (ROM_HEADER.Name[0] != 0) {
-      snprintf (filename, 256, "%s-%.8s", ROM_PARAMS.headername, self->rom_settings.MD5);
+    } else if (self->rom_header.Name[0] != 0) {
+      snprintf (filename, 256, "%s-%.8s", header_name, self->rom_settings.MD5);
     } else {
       snprintf (filename, 256, "unknown-%.8s", self->rom_settings.MD5);
     }
@@ -519,6 +541,31 @@ try_migrate_libretro_save (Mupen64PlusCore  *self,
   return TRUE;
 }
 
+static m64p_system_type
+rom_country_code_to_system_type (uint16_t country_code)
+{
+  switch (country_code) {
+  // PAL codes
+  case 0x44:
+  case 0x46:
+  case 0x49:
+  case 0x50:
+  case 0x53:
+  case 0x55:
+  case 0x58:
+  case 0x59:
+    return SYSTEM_PAL;
+
+  // NTSC codes
+  case 0x37:
+  case 0x41:
+  case 0x45:
+  case 0x4a:
+  default: // Fallback for unknown codes
+    return SYSTEM_NTSC;
+  }
+}
+
 static gboolean
 mupen64plus_core_start (HsCore      *core,
                         const char  *rom_path,
@@ -556,6 +603,12 @@ mupen64plus_core_start (HsCore      *core,
 
   if (CoreDoCommand (M64CMD_ROM_OPEN, (int) length, (gpointer) data) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_COULDNT_LOAD_ROM, "Failed to load ROM");
+
+    return FALSE;
+  }
+
+  if (CoreDoCommand (M64CMD_ROM_GET_HEADER, sizeof(m64p_rom_header), &self->rom_header) != M64ERR_SUCCESS) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to retrieve ROM header");
 
     return FALSE;
   }
@@ -814,7 +867,9 @@ mupen64plus_core_get_frame_rate (HsCore *core)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
-  if (ROM_PARAMS.systemtype == SYSTEM_PAL)
+  m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
+
+  if (system_type == SYSTEM_PAL)
     return 50;
 
   return 60;
@@ -825,7 +880,9 @@ mupen64plus_core_get_aspect_ratio (HsCore *core)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
-  if (ROM_PARAMS.systemtype == SYSTEM_NTSC)
+  m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
+
+  if (system_type == SYSTEM_NTSC)
     return 4.0 / 3.0 * 120.0 / 119.0;
 
   return 4.0 / 3.0;
