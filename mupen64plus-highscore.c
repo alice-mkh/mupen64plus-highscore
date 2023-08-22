@@ -64,9 +64,6 @@ G_DEFINE_FINAL_TYPE_WITH_CODE (Mupen64PlusCore, mupen64plus_core, HS_TYPE_CORE,
 static void
 debug_callback (gpointer context, int level, const char *message)
 {
-  if (level >= M64MSG_VERBOSE)
-    return;
-
   // Since we're not using the regular plugin loading mechanism, the core will think plugins
   // the plugins aren't attached and will warn about that. Silence those warnings.
   if (g_str_equal (message, "No video plugin attached.  There will be no video output.") ||
@@ -76,7 +73,26 @@ debug_callback (gpointer context, int level, const char *message)
     return;
   }
 
-  g_message ("%s", message);
+  HsLogLevel hs_level;
+
+  switch (level) {
+  case M64MSG_ERROR:
+    hs_level = HS_LOG_CRITICAL;
+    break;
+  case M64MSG_WARNING:
+    hs_level = HS_LOG_WARNING;
+    break;
+  case M64MSG_INFO:
+    hs_level = HS_LOG_INFO;
+    break;
+  case M64MSG_STATUS:
+  case M64MSG_VERBOSE:
+  default:
+    hs_level = HS_LOG_DEBUG;
+    break;
+  }
+
+  hs_core_log (HS_CORE (core), hs_level, message);
 }
 
 static void
