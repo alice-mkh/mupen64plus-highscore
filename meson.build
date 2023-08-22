@@ -47,7 +47,6 @@ add_project_arguments([
 
 mupen64plus_core_c_args = [
   '-DM64P_CORE_PROTOTYPES=1',
-  '-DM64P_PARALLEL=1',
   '-DDYNAREC=1',
   '-DNO_KEYBINDINGS=1',
   '-fvisibility=hidden',
@@ -126,7 +125,6 @@ mupen64plus_core_source = [
   'mupen64plus-core/src/main/savestates.c',
   'mupen64plus-core/src/main/screenshot.c',
   'mupen64plus-core/src/main/sdl_key_converter.c',
-  'mupen64plus-core/src/main/workqueue.c',
   'mupen64plus-core/src/osal/dynamiclib_unix.c',
   'mupen64plus-core/src/plugin/plugin.c',
   'mupen64plus-core/src/plugin/dummy_video.c',
