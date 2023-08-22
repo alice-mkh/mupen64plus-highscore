@@ -111,7 +111,7 @@ finish_savestate_cb (Mupen64PlusCore *self)
   if (result) {
     self->savestate_callback (HS_CORE (self), NULL);
   } else {
-    GError *error;
+    GError *error = NULL;
 
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL,
                  "Failed to %s state", self->savestate_load ? "load" : "save");
@@ -815,7 +815,7 @@ mupen64plus_core_load_state (HsCore          *core,
   g_object_ref (self);
 
   if (CoreDoCommand (M64CMD_STATE_LOAD, 1, (gpointer) path) != M64ERR_SUCCESS) {
-    GError *error;
+    GError *error = NULL;
 
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to initiate loading state");
     callback (core, &error);
@@ -846,7 +846,7 @@ mupen64plus_core_save_state (HsCore          *core,
   g_object_ref (self);
 
   if (CoreDoCommand (M64CMD_STATE_SAVE, 1, (gpointer) path) != M64ERR_SUCCESS) {
-    GError *error;
+    GError *error = NULL;
 
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to initiate saving state");
     callback (core, &error);
