@@ -542,13 +542,6 @@ mupen64plus_core_start (HsCore      *core,
     return FALSE;
   }
 
-  m64p_handle config;
-  ConfigOpenSection ("Core", &config);
-  ConfigSetParameter (config, "SaveSRAMPath", M64TYPE_STRING, save_path);
-  ConfigSaveSection ("Core");
-
-  ConfigSaveSection ("CoreEvents");
-
   if (ConfigOverrideUserPaths (/* DataPath */ save_path, /* CachePath */ cache_path) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to override user paths");
 
@@ -569,6 +562,13 @@ mupen64plus_core_start (HsCore      *core,
 
   if (!try_migrate_libretro_save (self, save_path, cache_path, error))
     return FALSE;
+
+  m64p_handle config;
+  ConfigOpenSection ("Core", &config);
+  ConfigSetParameter (config, "SaveSRAMPath", M64TYPE_STRING, save_path);
+  ConfigSaveSection ("Core");
+
+  ConfigSaveSection ("CoreEvents");
 
   // Set up video
   self->context = hs_core_create_gl_context (core,
