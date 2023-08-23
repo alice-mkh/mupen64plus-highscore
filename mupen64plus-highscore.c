@@ -331,8 +331,6 @@ input_initiate_controllers (CONTROL_INFO info)
 {
   g_mutex_lock (&core->input_mutex);
   core->control_info = info;
-  core->control_info.Controls[0].Present = 1;
-  core->control_info.Controls[0].Plugin = PLUGIN_MEMPAK;
   g_mutex_unlock (&core->input_mutex);
 }
 
@@ -968,33 +966,52 @@ const uint8_t button_offsets[] = {
 };
 
 static void
-mupen64plus_nintendo_64_core_button_pressed (HsNintendo64Core *core, guint port, HsNintendo64Button button)
+mupen64plus_nintendo_64_core_button_pressed (HsNintendo64Core *core, guint player, HsNintendo64Button button)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   g_mutex_lock (&self->input_mutex);
-  self->button_state[port].Value |= (1 << button_offsets[button]);
+  self->button_state[player].Value |= (1 << button_offsets[button]);
   g_mutex_unlock (&self->input_mutex);
 }
 
 static void
-mupen64plus_nintendo_64_core_button_released (HsNintendo64Core *core, guint port, HsNintendo64Button button)
+mupen64plus_nintendo_64_core_button_released (HsNintendo64Core *core, guint player, HsNintendo64Button button)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   g_mutex_lock (&self->input_mutex);
-  self->button_state[port].Value &= ~(1 << button_offsets[button]);
+  self->button_state[player].Value &= ~(1 << button_offsets[button]);
   g_mutex_unlock (&self->input_mutex);
 }
 
 static void
-mupen64plus_nintendo_64_core_control_stick_moved (HsNintendo64Core *core, guint port, double x, double y)
+mupen64plus_nintendo_64_core_control_stick_moved (HsNintendo64Core *core, guint player, double x, double y)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   g_mutex_lock (&self->input_mutex);
-  self->button_state[port].X_AXIS = (int8_t) round (x * 80);
-  self->button_state[port].Y_AXIS = (int8_t) round (y * -80); // Y axis is inverted compared to the API
+  self->button_state[player].X_AXIS = (int8_t) round (x * 80);
+  self->button_state[player].Y_AXIS = (int8_t) round (y * -80); // Y axis is inverted compared to the API
+  g_mutex_unlock (&self->input_mutex);
+}
+
+static guint
+mupen64plus_nintendo_64_core_get_max_players (HsNintendo64Core *core)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
+  return self->rom_settings.players;
+}
+
+static void
+mupen64plus_nintendo_64_core_set_controller_present (HsNintendo64Core *core, guint player, gboolean present)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
+  g_mutex_lock (&self->input_mutex);
+  self->control_info.Controls[player].Present = present ? 1 : 0;
+  self->control_info.Controls[player].Plugin = present ? PLUGIN_MEMPAK : PLUGIN_NONE;
   g_mutex_unlock (&self->input_mutex);
 }
 
@@ -1004,6 +1021,8 @@ mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface)
   iface->button_pressed = mupen64plus_nintendo_64_core_button_pressed;
   iface->button_released = mupen64plus_nintendo_64_core_button_released;
   iface->control_stick_moved = mupen64plus_nintendo_64_core_control_stick_moved;
+  iface->get_max_players = mupen64plus_nintendo_64_core_get_max_players;
+  iface->set_controller_present = mupen64plus_nintendo_64_core_set_controller_present;
 }
 
 GType
