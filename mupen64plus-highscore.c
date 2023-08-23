@@ -994,7 +994,7 @@ mupen64plus_nintendo_64_core_control_stick_moved (HsNintendo64Core *core, guint 
 
   g_mutex_lock (&self->input_mutex);
   self->button_state[port].X_AXIS = (int8_t) round (x * 80);
-  self->button_state[port].Y_AXIS = (int8_t) round (y * 80);
+  self->button_state[port].Y_AXIS = (int8_t) round (y * -80); // Y axis is inverted compared to the API
   g_mutex_unlock (&self->input_mutex);
 }
 
