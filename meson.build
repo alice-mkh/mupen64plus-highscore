@@ -32,6 +32,7 @@ common_c_cpp_args = [
   '-Wno-unused-function',
   '-Wno-unused-parameter',
   '-Wno-unused-variable',
+  '-fvisibility=hidden',
 ]
 
 add_project_arguments([
@@ -145,7 +146,7 @@ arch = build_machine.cpu_family()
 if arch == 'x86'
   mupen64plus_core_c_args += [ '-DNEW_DYNAREC=1', '-DARCH_MIN_SSE2', '-msse', '-msse2' ]
   mupen64plus_core_source += 'mupen64plus-core/src/device/r4300/new_dynarec/x86/linkage_x86.asm'
-  pic = fals
+  pic = false
 elif arch == 'x86_64'
   mupen64plus_core_c_args += [ '-DNEW_DYNAREC=2', '-DARCH_MIN_SSE2', '-msse', '-msse2' ]
   mupen64plus_core_source += 'mupen64plus-core/src/device/r4300/new_dynarec/x64/linkage_x64.asm'
