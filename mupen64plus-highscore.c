@@ -565,10 +565,10 @@ rom_country_code_to_system_type (uint16_t country_code)
 }
 
 static gboolean
-mupen64plus_core_start (HsCore      *core,
-                        const char  *rom_path,
-                        const char  *save_path,
-                        GError     **error)
+mupen64plus_core_load_rom (HsCore      *core,
+                           const char  *rom_path,
+                           const char  *save_path,
+                           GError     **error)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
   char *data;
@@ -724,10 +724,16 @@ mupen64plus_core_start (HsCore      *core,
   }
   hlePluginStartup ((gpointer) self, debug_callback);
 
+  return TRUE;
+}
+
+static void
+mupen64plus_core_start (HsCore *core)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
   self->emulation_thread = g_thread_new ("Mupen64Plus emulation thread",
                                          (GThreadFunc) run_emulation_thread, self);
-
-  return TRUE;
 }
 
 static void
@@ -916,6 +922,7 @@ mupen64plus_core_class_init (Mupen64PlusCoreClass *klass)
 
   object_class->finalize = mupen64plus_core_finalize;
 
+  core_class->load_rom = mupen64plus_core_load_rom;
   core_class->start = mupen64plus_core_start;
   core_class->run_frame = mupen64plus_core_run_frame;
   core_class->reset = mupen64plus_core_reset;
