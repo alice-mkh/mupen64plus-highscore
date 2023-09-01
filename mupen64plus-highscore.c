@@ -532,7 +532,7 @@ try_migrate_libretro_save (Mupen64PlusCore  *self,
   }
 
   // All done
-  g_autofree char *backup_path = g_file_get_path (backup_file);
+  const char *backup_path = g_file_peek_path (backup_file);
   g_autofree char *message = g_strdup_printf ("Libretro save file migrated successfully. A backup has been made in %s", backup_path);
   hs_core_log (HS_CORE (self), HS_LOG_MESSAGE, message);
 
@@ -1004,7 +1004,7 @@ mupen64plus_nintendo_64_core_control_stick_moved (HsNintendo64Core *core, guint 
 }
 
 static guint
-mupen64plus_nintendo_64_core_get_max_players (HsNintendo64Core *core)
+mupen64plus_nintendo_64_core_get_players (HsNintendo64Core *core)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
@@ -1028,7 +1028,7 @@ mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface)
   iface->button_pressed = mupen64plus_nintendo_64_core_button_pressed;
   iface->button_released = mupen64plus_nintendo_64_core_button_released;
   iface->control_stick_moved = mupen64plus_nintendo_64_core_control_stick_moved;
-  iface->get_max_players = mupen64plus_nintendo_64_core_get_max_players;
+  iface->get_players = mupen64plus_nintendo_64_core_get_players;
   iface->set_controller_present = mupen64plus_nintendo_64_core_set_controller_present;
 }
 
