@@ -736,6 +736,50 @@ mupen64plus_core_start (HsCore *core)
                                          (GThreadFunc) run_emulation_thread, self);
 }
 
+const uint8_t PAD_BUTTON_OFFSETS[] = {
+  0x03, // U_DPAD
+  0x02, // D_DPAD
+  0x01, // L_DPAD
+  0x00, // R_DPAD
+  0x07, // A_BUTTON
+  0x06, // B_BUTTON
+  0x0B, // U_CBUTTON
+  0x0A, // D_CBUTTON
+  0x09, // L_CBUTTON
+  0x08, // R_CBUTTON
+  0x0D, // L_TRIG
+  0x0C, // R_TRIG
+  0x05, // Z_TRIG
+  0x04, // START_BUTTON
+};
+
+static void
+mupen64plus_core_poll_input (HsCore *core, HsInputState *input_state)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
+  g_mutex_lock (&self->input_mutex);
+
+  for (int player = 0; player < HS_NINTENDO_64_MAX_PLAYERS; player++) {
+    uint32_t buttons = input_state->nintendo_64.pad_buttons[player];
+
+    for (int btn = 0; btn < HS_NINTENDO_64_N_BUTTONS; btn++) {
+      if (buttons & 1 << btn)
+        self->button_state[player].Value |= 1 << PAD_BUTTON_OFFSETS[btn];
+      else
+        self->button_state[player].Value &= ~(1 << PAD_BUTTON_OFFSETS[btn]);
+    }
+
+    double x = input_state->nintendo_64.pad_control_stick_x[player];
+    double y = input_state->nintendo_64.pad_control_stick_y[player];
+
+    self->button_state[player].X_AXIS = (int8_t) round (x * 80);
+    self->button_state[player].Y_AXIS = (int8_t) round (y * -80); // Y axis is inverted compared to the API
+  }
+
+  g_mutex_unlock (&self->input_mutex);
+}
+
 static void
 mupen64plus_core_run_frame (HsCore *core)
 {
@@ -924,6 +968,7 @@ mupen64plus_core_class_init (Mupen64PlusCoreClass *klass)
 
   core_class->load_rom = mupen64plus_core_load_rom;
   core_class->start = mupen64plus_core_start;
+  core_class->poll_input = mupen64plus_core_poll_input;
   core_class->run_frame = mupen64plus_core_run_frame;
   core_class->reset = mupen64plus_core_reset;
   core_class->stop = mupen64plus_core_stop;
@@ -955,54 +1000,6 @@ mupen64plus_core_init (Mupen64PlusCore *self)
   g_mutex_init (&self->savestate_mutex);
 }
 
-const uint8_t button_offsets[] = {
-  0x03, // U_DPAD
-  0x02, // D_DPAD
-  0x01, // L_DPAD
-  0x00, // R_DPAD
-  0x07, // A_BUTTON
-  0x06, // B_BUTTON
-  0x0B, // U_CBUTTON
-  0x0A, // D_CBUTTON
-  0x09, // L_CBUTTON
-  0x08, // R_CBUTTON
-  0x0D, // L_TRIG
-  0x0C, // R_TRIG
-  0x05, // Z_TRIG
-  0x04, // START_BUTTON
-};
-
-static void
-mupen64plus_nintendo_64_core_button_pressed (HsNintendo64Core *core, guint player, HsNintendo64Button button)
-{
-  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
-
-  g_mutex_lock (&self->input_mutex);
-  self->button_state[player].Value |= (1 << button_offsets[button]);
-  g_mutex_unlock (&self->input_mutex);
-}
-
-static void
-mupen64plus_nintendo_64_core_button_released (HsNintendo64Core *core, guint player, HsNintendo64Button button)
-{
-  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
-
-  g_mutex_lock (&self->input_mutex);
-  self->button_state[player].Value &= ~(1 << button_offsets[button]);
-  g_mutex_unlock (&self->input_mutex);
-}
-
-static void
-mupen64plus_nintendo_64_core_control_stick_moved (HsNintendo64Core *core, guint player, double x, double y)
-{
-  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
-
-  g_mutex_lock (&self->input_mutex);
-  self->button_state[player].X_AXIS = (int8_t) round (x * 80);
-  self->button_state[player].Y_AXIS = (int8_t) round (y * -80); // Y axis is inverted compared to the API
-  g_mutex_unlock (&self->input_mutex);
-}
-
 static guint
 mupen64plus_nintendo_64_core_get_players (HsNintendo64Core *core)
 {
@@ -1025,9 +1022,6 @@ mupen64plus_nintendo_64_core_set_controller_present (HsNintendo64Core *core, gui
 static void
 mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface)
 {
-  iface->button_pressed = mupen64plus_nintendo_64_core_button_pressed;
-  iface->button_released = mupen64plus_nintendo_64_core_button_released;
-  iface->control_stick_moved = mupen64plus_nintendo_64_core_control_stick_moved;
   iface->get_players = mupen64plus_nintendo_64_core_get_players;
   iface->set_controller_present = mupen64plus_nintendo_64_core_set_controller_present;
 }
