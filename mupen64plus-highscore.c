@@ -631,7 +631,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   self->context = hs_core_create_gl_context (core,
                                              HS_GL_PROFILE_CORE,
                                              3, 3,
-                                             HS_GL_FLAGS_DEPTH);
+                                             HS_GL_FLAGS_DEPTH | HS_GL_FLAGS_FLIPPED);
 
   m64p_video_extension_functions override = {
     17, // The number of functions below
