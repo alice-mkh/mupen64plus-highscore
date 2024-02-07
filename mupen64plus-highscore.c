@@ -848,6 +848,46 @@ mupen64plus_core_resume (HsCore *core)
   g_atomic_int_set (&self->paused, FALSE);
 }
 
+static gboolean
+mupen64plus_core_reload_save (HsCore      *core,
+                              const char  *save_path,
+                              GError     **error)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
+  int api_version;
+  if (PluginGetVersion (NULL, NULL, &api_version, NULL, NULL) != M64ERR_SUCCESS) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to fetch to core API version");
+
+    return FALSE;
+  }
+
+  g_autofree char *cache_path = hs_core_get_cache_path (core);
+
+  if (CoreDoCommand (M64CMD_STOP, 0, NULL) != M64ERR_SUCCESS) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to stop core");
+
+    return FALSE;
+  }
+
+  g_clear_pointer (&self->emulation_thread, g_thread_join);
+
+  if (ConfigOverrideUserPaths (/* DataPath */ save_path, /* CachePath */ cache_path) != M64ERR_SUCCESS) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to override user paths");
+
+    return FALSE;
+  }
+
+  m64p_handle config;
+  ConfigOpenSection ("Core", &config);
+  ConfigSetParameter (config, "SaveSRAMPath", M64TYPE_STRING, save_path);
+  ConfigSaveSection ("Core");
+
+  mupen64plus_core_start (core);
+
+  return TRUE;
+}
+
 static void
 mupen64plus_core_load_state (HsCore          *core,
                              const char      *path,
@@ -974,6 +1014,8 @@ mupen64plus_core_class_init (Mupen64PlusCoreClass *klass)
   core_class->stop = mupen64plus_core_stop;
   core_class->pause = mupen64plus_core_pause;
   core_class->resume = mupen64plus_core_resume;
+
+  core_class->reload_save = mupen64plus_core_reload_save;
 
   core_class->load_state = mupen64plus_core_load_state;
   core_class->save_state = mupen64plus_core_save_state;
