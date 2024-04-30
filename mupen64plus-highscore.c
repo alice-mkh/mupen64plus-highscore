@@ -53,6 +53,8 @@ struct _Mupen64PlusCore
   gboolean savestate_load;
   // Lock savestate_mutex before accessing
   int savestate_result;
+  // Lock savestate_mutex before accessing
+  gboolean should_pause_again;
   GMutex savestate_mutex;
 };
 
@@ -135,6 +137,12 @@ state_callback (gpointer context, m64p_core_param param_type, int new_value)
     g_mutex_lock (&core->savestate_mutex);
     core->savestate_result = new_value;
     g_idle_add_once ((GSourceOnceFunc) finish_savestate_cb, core);
+
+    if (param_type == M64CORE_STATE_SAVECOMPLETE && core->should_pause_again) {
+      CoreDoCommand (M64CMD_PAUSE, 0, NULL);
+      core->should_pause_again = FALSE;
+    }
+
     g_mutex_unlock (&core->savestate_mutex);
   }
 }
@@ -925,6 +933,7 @@ mupen64plus_core_save_state (HsCore          *core,
                              HsStateCallback  callback)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+  gboolean paused;
 
   g_mutex_lock (&self->savestate_mutex);
   self->savestate_callback = callback;
@@ -932,6 +941,16 @@ mupen64plus_core_save_state (HsCore          *core,
   g_mutex_unlock (&self->savestate_mutex);
 
   g_object_ref (self);
+
+  paused = g_atomic_int_get (&self->paused);
+
+  if (paused) {
+    CoreDoCommand (M64CMD_RESUME, 0, NULL);
+
+    g_mutex_lock (&self->savestate_mutex);
+    self->should_pause_again = TRUE;
+    g_mutex_unlock (&self->savestate_mutex);
+  }
 
   if (CoreDoCommand (M64CMD_STATE_SAVE, 1, (gpointer) path) != M64ERR_SUCCESS) {
     GError *error = NULL;
@@ -944,6 +963,14 @@ mupen64plus_core_save_state (HsCore          *core,
     g_mutex_unlock (&self->savestate_mutex);
 
     g_object_unref (self);
+
+    if (self->should_pause_again) {
+      CoreDoCommand (M64CMD_PAUSE, 0, NULL);
+
+      g_mutex_lock (&self->savestate_mutex);
+      self->should_pause_again = FALSE;
+      g_mutex_unlock (&self->savestate_mutex);
+    }
 
     return;
   }
