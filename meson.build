@@ -38,6 +38,7 @@ common_c_cpp_args = [
 add_project_arguments([
   common_c_cpp_args,
   '-Wno-absolute-value',
+  '-Wno-incompatible-pointer-types',
 ], language: 'c')
 
 add_project_arguments([
