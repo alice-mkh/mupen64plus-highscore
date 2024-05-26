@@ -300,7 +300,6 @@ mupen64plus_gliden64_source = [
   'GLideN64/src/GraphicsDrawer.cpp',
   'GLideN64/src/Log.cpp',
   'GLideN64/src/N64.cpp',
-  'GLideN64/src/NoiseTexture.cpp',
   'GLideN64/src/PaletteTexture.cpp',
   'GLideN64/src/Performance.cpp',
   'GLideN64/src/PostProcessor.cpp',
