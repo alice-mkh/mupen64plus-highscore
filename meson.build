@@ -1,4 +1,4 @@
-project('mupen64plus-highscore', ['c', 'cpp', 'nasm'],
+project('mupen64plus-highscore', ['c', 'cpp'],
   version : '0.1',
   default_options : [
     'warning_level=3',
@@ -145,10 +145,12 @@ mupen64plus_core_source = [
 arch = build_machine.cpu_family()
 
 if arch == 'x86'
+  add_languages('nasm')
   mupen64plus_core_c_args += [ '-DNEW_DYNAREC=1', '-DARCH_MIN_SSE2', '-msse', '-msse2' ]
   mupen64plus_core_source += 'mupen64plus-core/src/device/r4300/new_dynarec/x86/linkage_x86.asm'
   pic = false
 elif arch == 'x86_64'
+  add_languages('nasm')
   mupen64plus_core_c_args += [ '-DNEW_DYNAREC=2', '-DARCH_MIN_SSE2', '-msse', '-msse2' ]
   mupen64plus_core_source += 'mupen64plus-core/src/device/r4300/new_dynarec/x64/linkage_x64.asm'
   pic = true
