@@ -31,7 +31,7 @@ EXPORT m64p_error CALL gliden64PluginStartup(
 	void (*DebugCallback)(void *, int, const char *)
 )
 {
-	return api().PluginStartup(nullptr);
+	return api().PluginStartup(nullptr, Context, DebugCallback);
 }
 
 #ifdef M64P_GLIDENUI

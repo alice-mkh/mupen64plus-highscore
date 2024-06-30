@@ -330,6 +330,7 @@ mupen64plus_gliden64_source = [
   'GLideN64/src/uCodes/F3DEX2.cpp',
   'GLideN64/src/uCodes/F3DEX2ACCLAIM.cpp',
   'GLideN64/src/uCodes/F3DEX2CBFD.cpp',
+  'GLideN64/src/uCodes/F3DEX3.cpp',
   'GLideN64/src/uCodes/F3DFLX2.cpp',
   'GLideN64/src/uCodes/F3DGOLDEN.cpp',
   'GLideN64/src/uCodes/F3DPD.cpp',

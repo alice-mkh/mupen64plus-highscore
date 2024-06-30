@@ -53,6 +53,11 @@ extern ptr_VidExt_GL_SetAttribute       CoreVideo_GL_SetAttribute;
 extern ptr_VidExt_GL_GetAttribute       CoreVideo_GL_GetAttribute;
 extern ptr_VidExt_GL_SwapBuffers        CoreVideo_GL_SwapBuffers;
 extern ptr_VidExt_GL_GetDefaultFramebuffer CoreVideo_GL_GetDefaultFramebuffer;
+
+extern ptr_PluginGetVersion             CoreGetVersion;
+
+extern void*                            CoreDebugCallbackContext;
+extern ptr_DebugCallback                CoreDebugCallback;
 #endif
 
 #define CoreVideo_Init                     VidExt_Init
@@ -71,6 +76,8 @@ extern ptr_VidExt_GL_GetDefaultFramebuffer CoreVideo_GL_GetDefaultFramebuffer;
 #define CoreVideo_GL_GetDefaultFramebuffer VidExt_GL_GetDefaultFramebuffer
 
 #define CoreGetVersion                  PluginGetVersion
+
+typedef void (*ptr_DebugCallback)(void *Context, int level, const char *message);
 
 extern const unsigned int* rdram_size;
 
