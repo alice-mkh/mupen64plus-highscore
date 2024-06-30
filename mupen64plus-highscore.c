@@ -48,6 +48,8 @@ struct _Mupen64PlusCore
   gboolean paused;
 
   // Lock savestate_mutex before accessing
+  gboolean savestate_in_progress;
+  // Lock savestate_mutex before accessing
   HsStateCallback savestate_callback;
   // Lock savestate_mutex before accessing
   gboolean savestate_load;
@@ -124,6 +126,7 @@ finish_savestate_cb (Mupen64PlusCore *self)
   self->savestate_callback = NULL;
   self->savestate_load = FALSE;
   self->savestate_result = -1;
+  self->savestate_in_progress = FALSE;
 
   g_mutex_unlock (&self->savestate_mutex);
 
@@ -843,6 +846,11 @@ mupen64plus_core_pause (HsCore *core)
 
   g_atomic_int_set (&self->paused, TRUE);
 
+  g_mutex_lock (&self->savestate_mutex);
+  if (self->savestate_in_progress)
+    self->should_pause_again = FALSE;
+  g_mutex_unlock (&self->savestate_mutex);
+
   CoreDoCommand (M64CMD_PAUSE, 0, NULL);
 }
 
@@ -852,6 +860,11 @@ mupen64plus_core_resume (HsCore *core)
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   CoreDoCommand (M64CMD_RESUME, 0, NULL);
+
+  g_mutex_lock (&self->savestate_mutex);
+  if (self->savestate_in_progress)
+    self->should_pause_again = FALSE;
+  g_mutex_unlock (&self->savestate_mutex);
 
   g_atomic_int_set (&self->paused, FALSE);
 }
@@ -904,8 +917,20 @@ mupen64plus_core_load_state (HsCore          *core,
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   g_mutex_lock (&self->savestate_mutex);
+
+  if (self->savestate_in_progress) {
+    if (self->savestate_load)
+      hs_core_log (core, HS_LOG_CRITICAL, "Trying to load state when loading is already in progress");
+    else
+      hs_core_log (core, HS_LOG_CRITICAL, "Trying to load state when saving is already in progress");
+
+    g_mutex_unlock (&self->savestate_mutex);
+    return;
+  }
+
   self->savestate_callback = callback;
   self->savestate_load = TRUE;
+  self->savestate_in_progress = TRUE;
   g_mutex_unlock (&self->savestate_mutex);
 
   g_object_ref (self);
@@ -919,6 +944,7 @@ mupen64plus_core_load_state (HsCore          *core,
     g_mutex_lock (&self->savestate_mutex);
     self->savestate_callback = NULL;
     self->savestate_load = FALSE;
+    self->savestate_in_progress = FALSE;
     g_mutex_unlock (&self->savestate_mutex);
 
     g_object_unref (self);
@@ -936,8 +962,19 @@ mupen64plus_core_save_state (HsCore          *core,
   gboolean paused;
 
   g_mutex_lock (&self->savestate_mutex);
+
+  if (self->savestate_in_progress) {
+    if (self->savestate_load)
+      hs_core_log (core, HS_LOG_CRITICAL, "Trying to save state when loading is already in progress");
+    else
+      hs_core_log (core, HS_LOG_CRITICAL, "Trying to save state when saving is already in progress");
+
+    g_mutex_unlock (&self->savestate_mutex);
+    return;
+  }
   self->savestate_callback = callback;
   self->savestate_load = FALSE;
+  self->savestate_in_progress = TRUE;
   g_mutex_unlock (&self->savestate_mutex);
 
   g_object_ref (self);
@@ -972,9 +1009,12 @@ mupen64plus_core_save_state (HsCore          *core,
       g_mutex_unlock (&self->savestate_mutex);
     }
 
+    g_mutex_lock (&self->savestate_mutex);
+    self->savestate_in_progress = FALSE;
+    g_mutex_unlock (&self->savestate_mutex);
+
     return;
   }
-
 }
 
 static double
