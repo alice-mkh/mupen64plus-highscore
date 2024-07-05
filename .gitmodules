@@ -1,7 +1,7 @@
 [submodule "mupen64plus-core"]
 	path = mupen64plus-core
 	url = https://github.com/alice-mkh/mupen64plus-core
-	branch = wip/alice/save-fix
+	branch = highscore
 [submodule "GLideN64"]
 	path = GLideN64
 	url = https://github.com/gonetz/GLideN64
