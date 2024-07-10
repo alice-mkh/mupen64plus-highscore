@@ -20,6 +20,16 @@
 
 #define SAMPLE_RATE 33600
 
+#define RD_GETSTATUS        0x00   // get status
+#define RD_READKEYS         0x01   // read button values
+#define RD_READPAK          0x02   // read from controllerpack
+#define RD_WRITEPAK         0x03   // write to controllerpack
+#define RD_RESETCONTROLLER  0xff   // reset controller
+#define RD_READEEPROM       0x04   // read eeprom
+#define RD_WRITEEPROM       0x05   // write eeprom
+
+#define PAK_IO_RUMBLE       0xC000 // the address where rumble-commands are sent to
+
 static Mupen64PlusCore *core;
 
 struct _Mupen64PlusCore
@@ -351,6 +361,73 @@ input_get_keys (int control, BUTTONS *keys)
   g_mutex_lock (&core->input_mutex);
   *keys = core->button_state[control];
   g_mutex_unlock (&core->input_mutex);
+}
+
+static unsigned char
+data_crc (unsigned char *data, int length)
+{
+  unsigned char remainder = data[0];
+
+  int byte = 1;
+  unsigned char bit = 0;
+
+  while (byte <= length) {
+    int highBit = ((remainder & 0x80) != 0);
+    remainder = remainder << 1;
+
+    remainder += (byte < length && data[byte] & (0x80 >> bit )) ? 1 : 0;
+
+    remainder ^= (highBit) ? 0x85 : 0;
+
+    bit++;
+    byte += bit/8;
+    bit %= 8;
+  }
+
+  return remainder;
+}
+
+void
+input_controller_command (int control, unsigned char *command)
+{
+  unsigned char *data = &command[5];
+
+  if (control == -1)
+      return;
+
+  switch (command[2]) {
+  case RD_GETSTATUS:
+    break;
+  case RD_READKEYS:
+    break;
+  case RD_READPAK:
+    if (core->control_info.Controls[control].Plugin == PLUGIN_RAW) {
+      unsigned int dwAddress = (command[3] << 8) + (command[4] & 0xE0);
+
+      if (dwAddress >= 0x8000 && dwAddress < 0x9000)
+        memset (data, 0x80, 32);
+      else
+        memset (data, 0x00, 32);
+
+      data[32] = data_crc (data, 32);
+    }
+    break;
+  case RD_WRITEPAK:
+    if (core->control_info.Controls[control].Plugin == PLUGIN_RAW) {
+      unsigned int dwAddress = (command[3] << 8) + (command[4] & 0xE0);
+      data[32] = data_crc (data, 32);
+
+      if (dwAddress == PAK_IO_RUMBLE)
+        hs_core_rumble (core, *data ? 1 : 0, *data ? 1 : 0);
+    }
+    break;
+  case RD_RESETCONTROLLER:
+     break;
+  case RD_READEEPROM:
+    break;
+  case RD_WRITEEPROM:
+    break;
+  }
 }
 
 static gpointer
@@ -717,6 +794,8 @@ mupen64plus_core_load_rom (HsCore      *core,
   // Set up input
   input.getKeys = input_get_keys;
   input.initiateControllers = input_initiate_controllers;
+  input.controllerCommand = input_controller_command;
+
   if (plugin_start (M64PLUGIN_INPUT) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start input plugin");
 
@@ -1133,11 +1212,14 @@ mupen64plus_nintendo_64_core_set_controller (HsNintendo64Core *core, guint playe
     self->control_info.Controls[player].Plugin = PLUGIN_MEMPAK;
     break;
   case HS_NINTENDO_64_PAK_RUMBLE_PAK:
-    self->control_info.Controls[player].Plugin = PLUGIN_RUMBLE_PAK;
+    self->control_info.Controls[player].Plugin = PLUGIN_RAW;
     break;
   default:
     g_assert_not_reached ();
   }
+
+  if (pak != HS_NINTENDO_64_PAK_RUMBLE_PAK)
+    hs_core_rumble (core, 0, 0);
 
   g_mutex_unlock (&self->input_mutex);
 }
