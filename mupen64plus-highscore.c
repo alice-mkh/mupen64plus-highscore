@@ -1118,13 +1118,27 @@ mupen64plus_nintendo_64_core_get_players (HsNintendo64Core *core)
 }
 
 static void
-mupen64plus_nintendo_64_core_set_controller_present (HsNintendo64Core *core, guint player, gboolean present)
+mupen64plus_nintendo_64_core_set_controller (HsNintendo64Core *core, guint player, gboolean present, HsNintendo64Pak pak)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   g_mutex_lock (&self->input_mutex);
   self->control_info.Controls[player].Present = present ? 1 : 0;
-  self->control_info.Controls[player].Plugin = present ? PLUGIN_MEMPAK : PLUGIN_NONE;
+
+  switch (pak) {
+  case HS_NINTENDO_64_PAK_NONE:
+    self->control_info.Controls[player].Plugin = PLUGIN_NONE;
+    break;
+  case HS_NINTENDO_64_PAK_MEMORY_PAK:
+    self->control_info.Controls[player].Plugin = PLUGIN_MEMPAK;
+    break;
+  case HS_NINTENDO_64_PAK_RUMBLE_PAK:
+    self->control_info.Controls[player].Plugin = PLUGIN_RUMBLE_PAK;
+    break;
+  default:
+    g_assert_not_reached ();
+  }
+
   g_mutex_unlock (&self->input_mutex);
 }
 
@@ -1132,7 +1146,7 @@ static void
 mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface)
 {
   iface->get_players = mupen64plus_nintendo_64_core_get_players;
-  iface->set_controller_present = mupen64plus_nintendo_64_core_set_controller_present;
+  iface->set_controller = mupen64plus_nintendo_64_core_set_controller;
 }
 
 GType
