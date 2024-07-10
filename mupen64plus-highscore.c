@@ -387,6 +387,22 @@ data_crc (unsigned char *data, int length)
   return remainder;
 }
 
+static void
+start_rumble_cb (gpointer data)
+{
+  guint player = (guint) GPOINTER_TO_INT (data);
+
+  hs_core_rumble (core, player, 1, 1);
+}
+
+static void
+stop_rumble_cb (gpointer data)
+{
+  guint player = (guint) GPOINTER_TO_INT (data);
+
+  hs_core_rumble (core, player, 0, 0);
+}
+
 void
 input_controller_command (int control, unsigned char *command)
 {
@@ -418,7 +434,10 @@ input_controller_command (int control, unsigned char *command)
       data[32] = data_crc (data, 32);
 
       if (dwAddress == PAK_IO_RUMBLE)
-        hs_core_rumble (core, *data ? 1 : 0, *data ? 1 : 0);
+        if (*data)
+          g_idle_add_once ((GSourceOnceFunc) start_rumble_cb, GINT_TO_POINTER (control));
+        else
+          g_idle_add_once ((GSourceOnceFunc) stop_rumble_cb, GINT_TO_POINTER (control));
     }
     break;
   case RD_RESETCONTROLLER:
@@ -1219,7 +1238,7 @@ mupen64plus_nintendo_64_core_set_controller (HsNintendo64Core *core, guint playe
   }
 
   if (pak != HS_NINTENDO_64_PAK_RUMBLE_PAK)
-    hs_core_rumble (core, 0, 0);
+    hs_core_rumble (core, player, 0, 0);
 
   g_mutex_unlock (&self->input_mutex);
 }
