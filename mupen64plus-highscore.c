@@ -673,7 +673,8 @@ rom_country_code_to_system_type (uint16_t country_code)
 
 static gboolean
 mupen64plus_core_load_rom (HsCore      *core,
-                           const char  *rom_path,
+                           const char **rom_paths,
+                           int          n_rom_paths,
                            const char  *save_path,
                            GError     **error)
 {
@@ -681,7 +682,9 @@ mupen64plus_core_load_rom (HsCore      *core,
   char *data;
   gsize length;
 
-  if (!g_file_get_contents (rom_path, &data, &length, error))
+  g_assert (n_rom_paths == 1);
+
+  if (!g_file_get_contents (rom_paths[0], &data, &length, error))
     return FALSE;
 
   int api_version;
