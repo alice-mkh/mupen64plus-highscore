@@ -1,34 +1,38 @@
-#define M64P_CORE_PROTOTYPES 1
-
 #include "mupen64plus-highscore.h"
 
-#include "api/m64p_common.h"
-#include "api/m64p_config.h"
-#include "api/m64p_frontend.h"
-#include "api/m64p_plugin.h"
-#include "api/m64p_types.h"
-// Needed for manually attaching plugins
-#include "plugin/plugin.h"
+#include <mupen64plus/m64p_common.h>
+#include <mupen64plus/m64p_config.h>
+#include <mupen64plus/m64p_frontend.h>
+#include <mupen64plus/m64p_plugin.h>
+#include <mupen64plus/m64p_types.h>
 
 #include <ctype.h>
-#include <math.h>
+#include <dlfcn.h>
 #include <stdio.h>
-
-#include "shims/GLideN64/CommonPluginAPI.h"
-#include "shims/GLideN64/MupenPlusPluginAPI.h"
-#include "shims/mupen64plus-rsp-hle/plugin.h"
 
 #define SAMPLE_RATE 33600
 
-#define RD_GETSTATUS        0x00   // get status
-#define RD_READKEYS         0x01   // read button values
-#define RD_READPAK          0x02   // read from controllerpack
-#define RD_WRITEPAK         0x03   // write to controllerpack
-#define RD_RESETCONTROLLER  0xff   // reset controller
-#define RD_READEEPROM       0x04   // read eeprom
-#define RD_WRITEEPROM       0x05   // write eeprom
+static ptr_CoreStartup             CoreStartup;
+static ptr_CoreShutdown            CoreShutdown;
+static ptr_CoreDoCommand           CoreDoCommand;
+static ptr_CoreAttachPlugin        CoreAttachPlugin;
+static ptr_CoreDetachPlugin        CoreDetachPlugin;
+static ptr_CoreOverrideVidExt      CoreOverrideVidExt;
+static ptr_ConfigOpenSection       ConfigOpenSection;
+static ptr_ConfigSaveSection       ConfigSaveSection;
+static ptr_ConfigGetParamInt       ConfigGetParamInt;
+static ptr_ConfigSetParameter      ConfigSetParameter;
+static ptr_ConfigOverrideUserPaths ConfigOverrideUserPaths;
+static ptr_PluginGetVersion        PluginGetVersion;
 
-#define PAK_IO_RUMBLE       0xC000 // the address where rumble-commands are sent to
+typedef void (*HsSampleRateChangedCallback) (HsCore *core, double sample_rate);
+typedef void (*hs_setup_audio_t) (HsCore *core, HsSampleRateChangedCallback sample_rate_cb);
+typedef void (*hs_setup_input_t) (HsCore *core);
+typedef void (*hs_poll_input_t) (HsInputState *input_state);
+typedef void (*hs_set_controller_t) (guint player, gboolean present, HsNintendo64Pak pak);
+
+static hs_poll_input_t hs_poll_input;
+static hs_set_controller_t hs_set_controller;
 
 static Mupen64PlusCore *core;
 
@@ -45,11 +49,11 @@ struct _Mupen64PlusCore
   double new_sample_rate;
   GMutex audio_mutex;
 
-  // Lock controls_mutex before accessing
-  CONTROL_INFO control_info;
-  // Lock controls_mutex before accessing
-  BUTTONS button_state[4];
-  GMutex input_mutex;
+  m64p_dynlib_handle *core_handle;
+  m64p_dynlib_handle *gfx_plugin;
+  m64p_dynlib_handle *audio_plugin;
+  m64p_dynlib_handle *input_plugin;
+  m64p_dynlib_handle *rsp_plugin;
 
   m64p_rom_header rom_header;
   m64p_rom_settings rom_settings;
@@ -78,15 +82,6 @@ G_DEFINE_FINAL_TYPE_WITH_CODE (Mupen64PlusCore, mupen64plus_core, HS_TYPE_CORE,
 static void
 debug_callback (gpointer context, int level, const char *message)
 {
-  // Since we're not using the regular plugin loading mechanism, the core will think plugins
-  // the plugins aren't attached and will warn about that. Silence those warnings.
-  if (g_str_equal (message, "No video plugin attached.  There will be no video output.") ||
-      g_str_equal (message, "No RSP plugin attached.  The video output will be corrupted.") ||
-      g_str_equal (message, "No audio plugin attached.  There will be no sound output.") ||
-      g_str_equal (message, "No input plugin attached.  You won't be able to control the game.")) {
-    return;
-  }
-
   // These are similarly harmless and not something we care about.
   if (g_str_equal (message, "No version number in 'Core' config section. Setting defaults.") ||
       g_str_equal (message, "No version number in 'CoreEvents' config section. Setting defaults.")) {
@@ -158,6 +153,16 @@ state_callback (gpointer context, m64p_core_param param_type, int new_value)
 
     g_mutex_unlock (&core->savestate_mutex);
   }
+}
+
+static void
+sample_rate_cb (HsCore *core, double sample_rate)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
+  g_mutex_lock (&self->audio_mutex);
+  self->new_sample_rate = sample_rate;
+  g_mutex_unlock (&self->audio_mutex);
 }
 
 m64p_error
@@ -296,157 +301,6 @@ m64p_error
 video_vk_get_instance_extensions (const char **extensions[], uint32_t *n_extensions)
 {
   return M64ERR_UNSUPPORTED;
-}
-
-static void
-audio_ai_dacrate_changed (int system_type)
-{
-  guint clock_rate;
-  switch(system_type) {
-  case SYSTEM_PAL:
-    clock_rate = 49656530;
-    break;
-  case SYSTEM_MPAL:
-    clock_rate = 48628316;
-    break;
-  case SYSTEM_NTSC:
-  default:
-    clock_rate = 48681812;
-    break;
-  }
-
-  g_mutex_lock (&core->audio_mutex);
-  core->new_sample_rate = clock_rate / (*core->audio_info.AI_DACRATE_REG + 1);
-  g_mutex_unlock (&core->audio_mutex);
-}
-
-static void
-audio_ai_len_changed (void)
-{
-  int len_reg = *core->audio_info.AI_LEN_REG;
-  uint8_t *samples = (uint8_t*) (core->audio_info.RDRAM + (*core->audio_info.AI_DRAM_ADDR_REG & 0xFFFFFF));
-
-  // Swap left and right channel
-  for (uint32_t i = 0; i < len_reg; i += 4) {
-    samples[i] ^= samples[i + 2];
-    samples[i + 2] ^= samples[i];
-    samples[i] ^= samples[i + 2];
-    samples[i + 1] ^= samples[i + 3];
-    samples[i + 3] ^= samples[i + 1];
-    samples[i + 1] ^= samples[i + 3];
-  }
-
-  hs_core_play_samples (HS_CORE (core), (int16_t *) samples, len_reg / sizeof (int16_t));
-}
-
-static int
-audio_initiate_audio (AUDIO_INFO info)
-{
-  core->audio_info = info;
-
-  return 1;
-}
-
-void
-input_initiate_controllers (CONTROL_INFO info)
-{
-  g_mutex_lock (&core->input_mutex);
-  core->control_info = info;
-  g_mutex_unlock (&core->input_mutex);
-}
-
-void
-input_get_keys (int control, BUTTONS *keys)
-{
-  g_mutex_lock (&core->input_mutex);
-  *keys = core->button_state[control];
-  g_mutex_unlock (&core->input_mutex);
-}
-
-static unsigned char
-data_crc (unsigned char *data, int length)
-{
-  unsigned char remainder = data[0];
-
-  int byte = 1;
-  unsigned char bit = 0;
-
-  while (byte <= length) {
-    int highBit = ((remainder & 0x80) != 0);
-    remainder = remainder << 1;
-
-    remainder += (byte < length && data[byte] & (0x80 >> bit )) ? 1 : 0;
-
-    remainder ^= (highBit) ? 0x85 : 0;
-
-    bit++;
-    byte += bit/8;
-    bit %= 8;
-  }
-
-  return remainder;
-}
-
-static void
-start_rumble_cb (gpointer data)
-{
-  guint player = (guint) GPOINTER_TO_INT (data);
-
-  hs_core_rumble (core, player, 1, 1);
-}
-
-static void
-stop_rumble_cb (gpointer data)
-{
-  guint player = (guint) GPOINTER_TO_INT (data);
-
-  hs_core_rumble (core, player, 0, 0);
-}
-
-void
-input_controller_command (int control, unsigned char *command)
-{
-  unsigned char *data = &command[5];
-
-  if (control == -1)
-      return;
-
-  switch (command[2]) {
-  case RD_GETSTATUS:
-    break;
-  case RD_READKEYS:
-    break;
-  case RD_READPAK:
-    if (core->control_info.Controls[control].Plugin == PLUGIN_RAW) {
-      unsigned int dwAddress = (command[3] << 8) + (command[4] & 0xE0);
-
-      if (dwAddress >= 0x8000 && dwAddress < 0x9000)
-        memset (data, 0x80, 32);
-      else
-        memset (data, 0x00, 32);
-
-      data[32] = data_crc (data, 32);
-    }
-    break;
-  case RD_WRITEPAK:
-    if (core->control_info.Controls[control].Plugin == PLUGIN_RAW) {
-      unsigned int dwAddress = (command[3] << 8) + (command[4] & 0xE0);
-      data[32] = data_crc (data, 32);
-
-      if (dwAddress == PAK_IO_RUMBLE)
-        if (*data)
-          g_idle_add_once ((GSourceOnceFunc) start_rumble_cb, GINT_TO_POINTER (control));
-        else
-          g_idle_add_once ((GSourceOnceFunc) stop_rumble_cb, GINT_TO_POINTER (control));
-    }
-    break;
-  case RD_RESETCONTROLLER:
-     break;
-  case RD_READEEPROM:
-    break;
-  case RD_WRITEEPROM:
-    break;
-  }
 }
 
 static gpointer
@@ -671,6 +525,63 @@ rom_country_code_to_system_type (uint16_t country_code)
   }
 }
 
+static m64p_dynlib_handle
+attach_plugin (Mupen64PlusCore   *self,
+               m64p_plugin_type   type,
+               const char        *dir,
+               const char        *name,
+               GError           **error)
+{
+  g_autofree char *path = g_build_filename (dir, name, NULL);
+  m64p_dynlib_handle handle;
+  const char *type_name;
+
+  switch (type) {
+  case M64PLUGIN_GFX:
+    type_name = "GFX";
+    break;
+  case M64PLUGIN_AUDIO:
+    type_name = "audio";
+    break;
+  case M64PLUGIN_INPUT:
+    type_name = "input";
+    break;
+  case M64PLUGIN_RSP:
+    type_name = "RSP";
+    break;
+  default:
+    g_assert_not_reached ();
+  }
+
+  handle = dlopen (path, RTLD_NOW);
+  if (!handle) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Missing %s plugin", type_name);
+
+    return NULL;
+  }
+
+  ptr_PluginStartup startup = dlsym (handle, "PluginStartup");
+  if (!startup) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Missing PluginStartup in %s plugin", type_name);
+
+    return NULL;
+  }
+
+  if (startup (self->core_handle, (gpointer) self, debug_callback) != M64ERR_SUCCESS) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start up %s plugin", type_name);
+
+    return NULL;
+  }
+
+  if (CoreAttachPlugin (type, handle)) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to attach %s plugin", type_name);
+
+    return NULL;
+  }
+
+  return handle;
+}
+
 static gboolean
 mupen64plus_core_load_rom (HsCore      *core,
                            const char **rom_paths,
@@ -687,6 +598,26 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!g_file_get_contents (rom_paths[0], &data, &length, error))
     return FALSE;
 
+  self->core_handle = dlopen ("libmupen64plus.so.2.0.0", RTLD_NOW);
+  if (!self->core_handle) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Missing Mupen64Plus-Core");
+
+    return FALSE;
+  }
+
+  CoreStartup             = dlsym (self->core_handle, "CoreStartup");
+  CoreShutdown            = dlsym (self->core_handle, "CoreShutdown");
+  CoreDoCommand           = dlsym (self->core_handle, "CoreDoCommand");
+  CoreAttachPlugin        = dlsym (self->core_handle, "CoreAttachPlugin");
+  CoreDetachPlugin        = dlsym (self->core_handle, "CoreDetachPlugin");
+  CoreOverrideVidExt      = dlsym (self->core_handle, "CoreOverrideVidExt");
+  ConfigOpenSection       = dlsym (self->core_handle, "ConfigOpenSection");
+  ConfigSaveSection       = dlsym (self->core_handle, "ConfigSaveSection");
+  ConfigGetParamInt       = dlsym (self->core_handle, "ConfigGetParamInt");
+  ConfigSetParameter      = dlsym (self->core_handle, "ConfigSetParameter");
+  ConfigOverrideUserPaths = dlsym (self->core_handle, "ConfigOverrideUserPaths");
+  PluginGetVersion        = dlsym (self->core_handle, "PluginGetVersion");
+
   int api_version;
   if (PluginGetVersion (NULL, NULL, &api_version, NULL, NULL) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to fetch to core API version");
@@ -696,7 +627,7 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   g_autofree char *cache_path = hs_core_get_cache_path (core);
 
-  if (CoreStartup (api_version, /* ConfigPath */ save_path, /* DataPath */ CORE_DIR,
+  if (CoreStartup (api_version, /* ConfigPath */ save_path, /* DataPath */ DATA_DIR,
                    (gpointer) self, debug_callback, (gpointer) self, state_callback) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start the core");
 
@@ -737,6 +668,14 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   ConfigSaveSection ("CoreEvents");
 
+  // Change default resolution to match N64
+  ConfigOpenSection ("Video-General", &config);
+  int value = 320;
+  ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &value);
+  value = 240;
+  ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &value);
+  ConfigSaveSection ("Video-General");
+
   // Set up video
   self->context = hs_core_create_gl_context (core,
                                              HS_GL_PROFILE_CORE,
@@ -770,71 +709,34 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  gfx.getVersion = gliden64PluginGetVersion;
-  gfx.changeWindow = gliden64ChangeWindow;
-  gfx.initiateGFX = gliden64InitiateGFX;
-  gfx.moveScreen = gliden64MoveScreen;
-  gfx.processDList = gliden64ProcessDList;
-  gfx.processRDPList = gliden64ProcessRDPList;
-  gfx.romClosed = gliden64RomClosed;
-  gfx.romOpen = gliden64RomOpen;
-  gfx.showCFB = gliden64ShowCFB;
-  gfx.updateScreen = gliden64UpdateScreen;
-  gfx.viStatusChanged = gliden64ViStatusChanged;
-  gfx.viWidthChanged = gliden64ViWidthChanged;
-  gfx.readScreen = gliden64ReadScreen2;
-  gfx.setRenderingCallback = gliden64SetRenderingCallback;
-  gfx.resizeVideoOutput = gliden64ResizeVideoOutput;
-  gfx.fBRead = gliden64FBRead;
-  gfx.fBWrite = gliden64FBWrite;
-  gfx.fBGetFrameBufferInfo = gliden64FBGetFrameBufferInfo;
-  if (plugin_start (M64PLUGIN_GFX) != M64ERR_SUCCESS) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start video plugin");
-
+  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, "mupen64plus-video-GLideN64.so", error);
+  if (!self->gfx_plugin)
     return FALSE;
-  }
-  gliden64PluginStartup ((gpointer) self, debug_callback);
 
-  // Change default resolution to match N64
-  ConfigOpenSection ("Video-General", &config);
-  int value = 320;
-  ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &value);
-  value = 240;
-  ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &value);
-  ConfigSaveSection ("Video-General");
-
-  // Set up audio
-  audio.aiDacrateChanged = audio_ai_dacrate_changed;
-  audio.aiLenChanged = audio_ai_len_changed;
-  audio.initiateAudio = audio_initiate_audio;
-  if (plugin_start (M64PLUGIN_AUDIO) != M64ERR_SUCCESS) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start audio plugin");
-
+  self->audio_plugin = attach_plugin (self, M64PLUGIN_AUDIO, CORE_DIR, "mupen64plus-audio-highscore.so", error);
+  if (!self->audio_plugin)
     return FALSE;
-  }
 
-  // Set up input
-  input.getKeys = input_get_keys;
-  input.initiateControllers = input_initiate_controllers;
-  input.controllerCommand = input_controller_command;
-
-  if (plugin_start (M64PLUGIN_INPUT) != M64ERR_SUCCESS) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start input plugin");
-
+  self->input_plugin = attach_plugin (self, M64PLUGIN_INPUT, CORE_DIR, "mupen64plus-input-highscore.so", error);
+  if (!self->input_plugin)
     return FALSE;
-  }
 
-  // Set up RSP
-  rsp.getVersion = hlePluginGetVersion;
-  rsp.doRspCycles = hleDoRspCycles;
-  rsp.initiateRSP = hleInitiateRSP;
-  rsp.romClosed = hleRomClosed;
-  if (plugin_start (M64PLUGIN_RSP) != M64ERR_SUCCESS) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start RSP plugin");
-
+  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, "mupen64plus-rsp-hle.so", error);
+  if (!self->rsp_plugin)
     return FALSE;
-  }
-  hlePluginStartup ((gpointer) self, debug_callback);
+
+  hs_setup_audio_t hs_setup_audio = dlsym (self->audio_plugin, "hs_setup_audio");
+  hs_setup_input_t hs_setup_input = dlsym (self->input_plugin, "hs_setup_input");
+  hs_poll_input = dlsym (self->input_plugin, "hs_poll_input");
+  hs_set_controller = dlsym (self->input_plugin, "hs_set_controller");
+
+  g_assert (hs_setup_audio != NULL);
+  g_assert (hs_setup_input != NULL);
+  g_assert (hs_poll_input != NULL);
+  g_assert (hs_set_controller != NULL);
+
+  hs_setup_audio (core, sample_rate_cb);
+  hs_setup_input (core);
 
   return TRUE;
 }
@@ -848,48 +750,10 @@ mupen64plus_core_start (HsCore *core)
                                          (GThreadFunc) run_emulation_thread, self);
 }
 
-const uint8_t PAD_BUTTON_OFFSETS[] = {
-  0x03, // U_DPAD
-  0x02, // D_DPAD
-  0x01, // L_DPAD
-  0x00, // R_DPAD
-  0x07, // A_BUTTON
-  0x06, // B_BUTTON
-  0x0B, // U_CBUTTON
-  0x0A, // D_CBUTTON
-  0x09, // L_CBUTTON
-  0x08, // R_CBUTTON
-  0x0D, // L_TRIG
-  0x0C, // R_TRIG
-  0x05, // Z_TRIG
-  0x04, // START_BUTTON
-};
-
 static void
 mupen64plus_core_poll_input (HsCore *core, HsInputState *input_state)
 {
-  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
-
-  g_mutex_lock (&self->input_mutex);
-
-  for (int player = 0; player < HS_NINTENDO_64_MAX_PLAYERS; player++) {
-    uint32_t buttons = input_state->nintendo_64.pad_buttons[player];
-
-    for (int btn = 0; btn < HS_NINTENDO_64_N_BUTTONS; btn++) {
-      if (buttons & 1 << btn)
-        self->button_state[player].Value |= 1 << PAD_BUTTON_OFFSETS[btn];
-      else
-        self->button_state[player].Value &= ~(1 << PAD_BUTTON_OFFSETS[btn]);
-    }
-
-    double x = input_state->nintendo_64.pad_control_stick_x[player];
-    double y = input_state->nintendo_64.pad_control_stick_y[player];
-
-    self->button_state[player].X_AXIS = (int8_t) round (x * 80);
-    self->button_state[player].Y_AXIS = (int8_t) round (y * -80); // Y axis is inverted compared to the API
-  }
-
-  g_mutex_unlock (&self->input_mutex);
+  hs_poll_input (input_state);
 }
 
 static void
@@ -930,14 +794,23 @@ mupen64plus_core_stop (HsCore *core)
   if (CoreDoCommand (M64CMD_ROM_CLOSE, 0, NULL) != M64ERR_SUCCESS)
     hs_core_log (core, HS_LOG_CRITICAL, "Failed to close ROM");
 
-  if (gliden64PluginShutdown () != M64ERR_SUCCESS)
-    hs_core_log (core, HS_LOG_CRITICAL, "Failed to shut down GFX plugin");
-
-  if (hlePluginShutdown () != M64ERR_SUCCESS)
-    hs_core_log (core, HS_LOG_CRITICAL, "Failed to shut down RSP plugin");
+  if (CoreDetachPlugin (M64PLUGIN_GFX) != M64ERR_SUCCESS)
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to detach GFX plugin");
+  if (CoreDetachPlugin (M64PLUGIN_AUDIO) != M64ERR_SUCCESS)
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to detach audio plugin");
+  if (CoreDetachPlugin (M64PLUGIN_INPUT) != M64ERR_SUCCESS)
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to detach input plugin");
+  if (CoreDetachPlugin (M64PLUGIN_RSP) != M64ERR_SUCCESS)
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to detach RSP plugin");
 
   if (CoreShutdown () != M64ERR_SUCCESS)
-    hs_core_log (core, HS_LOG_CRITICAL, "Failed to shut down the core");
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to shutdown the core");
+
+  self->core_handle = NULL;
+  self->gfx_plugin = NULL;
+  self->audio_plugin = NULL;
+  self->input_plugin = NULL;
+  self->rsp_plugin = NULL;
 }
 
 static void
@@ -1158,7 +1031,6 @@ mupen64plus_core_finalize (GObject *object)
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (object);
 
   g_mutex_clear (&self->audio_mutex);
-  g_mutex_clear (&self->input_mutex);
   g_mutex_clear (&self->savestate_mutex);
 
   core = NULL;
@@ -1206,7 +1078,6 @@ mupen64plus_core_init (Mupen64PlusCore *self)
   self->savestate_result = -1;
 
   g_mutex_init (&self->audio_mutex);
-  g_mutex_init (&self->input_mutex);
   g_mutex_init (&self->savestate_mutex);
 }
 
@@ -1221,29 +1092,7 @@ mupen64plus_nintendo_64_core_get_players (HsNintendo64Core *core)
 static void
 mupen64plus_nintendo_64_core_set_controller (HsNintendo64Core *core, guint player, gboolean present, HsNintendo64Pak pak)
 {
-  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
-
-  g_mutex_lock (&self->input_mutex);
-  self->control_info.Controls[player].Present = present ? 1 : 0;
-
-  switch (pak) {
-  case HS_NINTENDO_64_PAK_NONE:
-    self->control_info.Controls[player].Plugin = PLUGIN_NONE;
-    break;
-  case HS_NINTENDO_64_PAK_MEMORY_PAK:
-    self->control_info.Controls[player].Plugin = PLUGIN_MEMPAK;
-    break;
-  case HS_NINTENDO_64_PAK_RUMBLE_PAK:
-    self->control_info.Controls[player].Plugin = PLUGIN_RAW;
-    break;
-  default:
-    g_assert_not_reached ();
-  }
-
-  if (pak != HS_NINTENDO_64_PAK_RUMBLE_PAK)
-    hs_core_rumble (core, player, 0, 0);
-
-  g_mutex_unlock (&self->input_mutex);
+  hs_set_controller (player, present, pak);
 }
 
 static void
