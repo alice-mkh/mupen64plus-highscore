@@ -12,16 +12,14 @@ sudo make install PREFIX=/usr LIBDIR=/usr/lib64 OSD=0 NEW_DYNAREC=1
 popd
 
 pushd mupen64plus-rsp-hle/projects/unix
-make all
-sudo make install PREFIX=/usr LIBDIR=/usr/lib64
+make all APIDIR=/usr/include/mupen64plus
+sudo make install PREFIX=/usr LIBDIR=/usr/lib64 APIDIR=/usr/include/mupen64plus
 popd
-
-exit 0
 
 pushd GLideN64/src
 mkdir build
 cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMUPENPLUSAPI=1 -DCMAKE_INSTALL_LIBDIR=lib64/highscore/cores
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMUPENPLUSAPI=1 -DCMAKE_INSTALL_LIBDIR=lib64
 make
 sudo make install
 popd
