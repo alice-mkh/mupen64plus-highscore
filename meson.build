@@ -68,6 +68,7 @@ shared_library('mupen64plus-highscore',
   dependencies : mupen64plus_deps,
   include_directories : mupen64plus_include_dirs,
   c_args : mupen64plus_c_args,
+  name_prefix : '',
   install_dir : cores_dir_mupen,
   install : true
 )
