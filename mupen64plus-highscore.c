@@ -280,7 +280,7 @@ video_resize_window (int width, int height)
 uint32_t
 video_gl_get_default_framebuffer (void)
 {
-  return 0;
+  return hs_gl_context_get_default_framebuffer (core->context);
 }
 
 m64p_error
