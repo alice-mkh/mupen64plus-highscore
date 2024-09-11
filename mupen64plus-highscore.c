@@ -554,6 +554,9 @@ attach_plugin (Mupen64PlusCore   *self,
     g_assert_not_reached ();
   }
 
+  g_autofree char *message = g_strdup_printf ("Loading %s plugin from %s", type_name, path);
+  hs_core_log (HS_CORE (self), HS_LOG_INFO, message);
+
   handle = dlopen (path, RTLD_NOW);
   if (!handle) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Missing %s plugin", type_name);
@@ -599,7 +602,11 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!g_file_get_contents (rom_paths[0], &data, &length, error))
     return FALSE;
 
-  self->core_handle = dlopen ("libmupen64plus.so.2.0.0", RTLD_NOW);
+  g_autofree char *core_path = g_strdup ("libmupen64plus.so.2.0.0");
+  g_autofree char *message = g_strdup_printf ("Loading mupen64plus-core from %s", core_path);
+  hs_core_log (HS_CORE (self), HS_LOG_INFO, message);
+
+  self->core_handle = dlopen (core_path, RTLD_NOW);
   if (!self->core_handle) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Missing Mupen64Plus-Core");
 
