@@ -279,7 +279,8 @@ video_resize_window (int width, int height)
 uint32_t
 video_gl_get_default_framebuffer (void)
 {
-  return 0;
+  g_print ("Default framebuffer: %u\n", hs_gl_context_get_default_framebuffer (core->context));
+  return hs_gl_context_get_default_framebuffer (core->context);
 }
 
 m64p_error
@@ -806,11 +807,11 @@ mupen64plus_core_stop (HsCore *core)
   if (CoreShutdown () != M64ERR_SUCCESS)
     hs_core_log (core, HS_LOG_CRITICAL, "Failed to shutdown the core");
 
-  self->core_handle = NULL;
-  self->gfx_plugin = NULL;
-  self->audio_plugin = NULL;
-  self->input_plugin = NULL;
-  self->rsp_plugin = NULL;
+  g_clear_pointer (&self->core_handle,  dlclose);
+  g_clear_pointer (&self->gfx_plugin,   dlclose);
+  g_clear_pointer (&self->audio_plugin, dlclose);
+  g_clear_pointer (&self->input_plugin, dlclose);
+  g_clear_pointer (&self->rsp_plugin,   dlclose);
 }
 
 static void
