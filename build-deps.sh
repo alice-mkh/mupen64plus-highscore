@@ -19,7 +19,7 @@ popd
 pushd GLideN64/src
 mkdir build
 cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMUPENPLUSAPI=1 -DCMAKE_INSTALL_LIBDIR=lib64
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_LIBDIR=lib64 -DMUPENPLUSAPI=ON -DUSE_SYSTEM_LIBS=ON
 make
 sudo make install
 popd
