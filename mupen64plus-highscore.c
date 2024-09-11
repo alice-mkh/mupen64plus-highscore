@@ -84,7 +84,8 @@ debug_callback (gpointer context, int level, const char *message)
 {
   // These are similarly harmless and not something we care about.
   if (g_str_equal (message, "No version number in 'Core' config section. Setting defaults.") ||
-      g_str_equal (message, "No version number in 'CoreEvents' config section. Setting defaults.")) {
+      g_str_equal (message, "No version number in 'CoreEvents' config section. Setting defaults.") ||
+      g_str_equal (message, "No version number in 'Rsp-HLE' config section. Setting defaults.")) {
     return;
   }
 
