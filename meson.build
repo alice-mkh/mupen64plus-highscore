@@ -8,11 +8,12 @@ project('mupen64plus-highscore', ['c', 'cpp'],
 cc = meson.get_compiler('c')
 
 prefix = get_option('prefix')
-cores_dir = prefix / get_option('libdir') / 'highscore' / 'cores'
+libdir = prefix / get_option('libdir')
+cores_dir = prefix / libdir / 'highscore' / 'cores'
 cores_dir_mupen = cores_dir / 'mupen64plus'
 
 data_dir = prefix / get_option('datadir') / 'mupen64plus'
-plugins_dir = prefix / get_option('libdir') / 'mupen64plus'
+plugins_dir = prefix / libdir / 'mupen64plus'
 
 mupen64plus_deps = [
   dependency('highscore-1'),
@@ -60,6 +61,7 @@ mupen64plus_source = [
 mupen64plus_c_args = [
   '-DCORE_DIR="' + cores_dir_mupen + '"',
   '-DDATA_DIR="' + data_dir + '"',
+  '-DLIB_DIR="' + libdir + '"',
   '-DPLUGINS_DIR="' + plugins_dir + '"',
 ]
 

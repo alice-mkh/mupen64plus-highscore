@@ -602,7 +602,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!g_file_get_contents (rom_paths[0], &data, &length, error))
     return FALSE;
 
-  g_autofree char *core_path = g_strdup ("libmupen64plus.so.2.0.0");
+  g_autofree char *core_path = g_build_filename (LIB_DIR, "/libmupen64plus.so.2", NULL);
   g_autofree char *message = g_strdup_printf ("Loading mupen64plus-core from %s", core_path);
   hs_core_log (HS_CORE (self), HS_LOG_INFO, message);
 
