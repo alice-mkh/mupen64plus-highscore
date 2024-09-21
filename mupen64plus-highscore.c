@@ -169,7 +169,14 @@ sample_rate_cb (HsCore *core, double sample_rate)
 m64p_error
 video_init (void)
 {
-  hs_gl_context_realize (core->context);
+  g_autoptr (GError) error = NULL;
+
+  if (!hs_gl_context_realize (core->context, &error)) {
+    g_autofree char *message = g_strdup_printf ("Failed to realize GL context: %s", error->message);
+    hs_core_log (core, HS_LOG_CRITICAL, message);
+
+    return M64ERR_SYSTEM_FAIL;
+  }
 
   return M64ERR_SUCCESS;
 }
