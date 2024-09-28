@@ -84,7 +84,7 @@ start_rumble_cb (gpointer data)
 {
   guint player = (guint) GPOINTER_TO_INT (data);
 
-  hs_core_rumble (core, player, 1, 1);
+  hs_core_rumble (core, player, 1, 1, G_MAXUINT16);
 }
 
 static void
@@ -92,7 +92,7 @@ stop_rumble_cb (gpointer data)
 {
   guint player = (guint) GPOINTER_TO_INT (data);
 
-  hs_core_rumble (core, player, 0, 0);
+  hs_core_rumble (core, player, 0, 0, 0);
 }
 
 static unsigned char
@@ -297,7 +297,7 @@ hs_set_controller (guint player, gboolean present, HsNintendo64Pak pak)
   }
 
   if (pak != HS_NINTENDO_64_PAK_RUMBLE_PAK)
-    hs_core_rumble (core, player, 0, 0);
+    hs_core_rumble (core, player, 0, 0, 0);
 
   g_mutex_unlock (&input_mutex);
 }
