@@ -682,11 +682,11 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   ConfigSaveSection ("CoreEvents");
 
-  // Change default resolution to match N64
+  // Reset resolution since we changed it previously
   ConfigOpenSection ("Video-General", &config);
-  int value = 320;
+  int value = 640;
   ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &value);
-  value = 240;
+  value = 480;
   ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &value);
   ConfigSaveSection ("Video-General");
 
