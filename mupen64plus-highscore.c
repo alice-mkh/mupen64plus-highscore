@@ -433,7 +433,7 @@ try_migrate_libretro_save (Mupen64PlusCore  *self,
   tmp_path = g_mkdtemp (tmp_path);
   g_autoptr (GFile) tmp_file = g_file_new_for_path (tmp_path);
 
-  // Backup the old save
+  // Back up the old save
   g_autoptr (GFile) tmp_backup_file = g_file_get_child (tmp_file, "libretro-backup");
   if (!g_file_copy (save_file, tmp_backup_file, G_FILE_COPY_BACKUP, NULL, NULL, NULL, error))
     return FALSE;
@@ -640,17 +640,9 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  g_autofree char *cache_path = hs_core_get_cache_path (core);
-
   if (CoreStartup (api_version, /* ConfigPath */ save_path, /* DataPath */ DATA_DIR,
                    (gpointer) self, debug_callback, (gpointer) self, state_callback) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to start the core");
-
-    return FALSE;
-  }
-
-  if (ConfigOverrideUserPaths (/* DataPath */ save_path, /* CachePath */ cache_path) != M64ERR_SUCCESS) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to override user paths");
 
     return FALSE;
   }
@@ -673,8 +665,15 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
+  g_autofree char *cache_path = hs_core_get_cache_path (core);
   if (!try_migrate_libretro_save (self, save_path, cache_path, error))
     return FALSE;
+
+  if (ConfigOverrideUserPaths (/* DataPath */ save_path, /* CachePath */ cache_path) != M64ERR_SUCCESS) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to override user paths");
+
+    return FALSE;
+  }
 
   m64p_handle config;
   ConfigOpenSection ("Core", &config);
@@ -864,15 +863,10 @@ mupen64plus_core_reload_save (HsCore      *core,
                               GError     **error)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
-
-  int api_version;
-  if (PluginGetVersion (NULL, NULL, &api_version, NULL, NULL) != M64ERR_SUCCESS) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to fetch to core API version");
-
-    return FALSE;
-  }
-
   g_autofree char *cache_path = hs_core_get_cache_path (core);
+
+  if (!try_migrate_libretro_save (self, save_path, cache_path, error))
+    return FALSE;
 
   if (CoreDoCommand (M64CMD_STOP, 0, NULL) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to stop core");
