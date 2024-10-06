@@ -84,7 +84,7 @@ start_rumble_cb (gpointer data)
 {
   guint player = (guint) GPOINTER_TO_INT (data);
 
-  hs_core_rumble (core, player, 1, 1, G_MAXUINT16);
+  hs_core_rumble (core, player, 1, 1, HS_MAX_RUMBLE_DURATION);
 }
 
 static void
