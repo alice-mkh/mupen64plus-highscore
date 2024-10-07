@@ -108,7 +108,7 @@ debug_callback (gpointer context, int level, const char *message)
     break;
   }
 
-  hs_core_log (HS_CORE (core), hs_level, message);
+  hs_core_log_literal (HS_CORE (core), hs_level, message);
 }
 
 static void
@@ -172,8 +172,7 @@ video_init (void)
   g_autoptr (GError) error = NULL;
 
   if (!hs_gl_context_realize (core->context, &error)) {
-    g_autofree char *message = g_strdup_printf ("Failed to realize GL context: %s", error->message);
-    hs_core_log (core, HS_LOG_CRITICAL, message);
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to realize GL context: %s", error->message);
 
     return M64ERR_SYSTEM_FAIL;
   }
@@ -502,8 +501,7 @@ try_migrate_libretro_save (Mupen64PlusCore  *self,
 
   // All done
   const char *backup_path = g_file_peek_path (backup_file);
-  g_autofree char *message = g_strdup_printf ("Libretro save file migrated successfully. A backup has been made in %s", backup_path);
-  hs_core_log (HS_CORE (self), HS_LOG_MESSAGE, message);
+  hs_core_log (HS_CORE (self), HS_LOG_MESSAGE, "Libretro save file migrated successfully. A backup has been made in %s", backup_path);
 
   return TRUE;
 }
@@ -561,8 +559,7 @@ attach_plugin (Mupen64PlusCore   *self,
     g_assert_not_reached ();
   }
 
-  g_autofree char *message = g_strdup_printf ("Loading %s plugin from %s", type_name, path);
-  hs_core_log (HS_CORE (self), HS_LOG_INFO, message);
+  hs_core_log (HS_CORE (self), HS_LOG_INFO, "Loading %s plugin from %s", type_name, path);
 
   handle = dlopen (path, RTLD_NOW);
   if (!handle) {
@@ -610,8 +607,7 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
 
   g_autofree char *core_path = g_build_filename (LIB_DIR, "/libmupen64plus.so.2", NULL);
-  g_autofree char *message = g_strdup_printf ("Loading mupen64plus-core from %s", core_path);
-  hs_core_log (HS_CORE (self), HS_LOG_INFO, message);
+  hs_core_log (HS_CORE (self), HS_LOG_INFO, "Loading mupen64plus-core from %s", core_path);
 
   self->core_handle = dlopen (core_path, RTLD_NOW);
   if (!self->core_handle) {
