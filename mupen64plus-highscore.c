@@ -785,9 +785,9 @@ mupen64plus_core_run_frame (HsCore *core)
 }
 
 static void
-mupen64plus_core_reset (HsCore *core)
+mupen64plus_core_reset (HsCore *core, gboolean hard)
 {
-  CoreDoCommand (M64CMD_RESET, 1, NULL);
+  CoreDoCommand (M64CMD_RESET, hard, NULL);
 }
 
 static void
