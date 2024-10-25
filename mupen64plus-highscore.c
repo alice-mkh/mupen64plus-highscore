@@ -1013,7 +1013,6 @@ static double
 mupen64plus_core_get_aspect_ratio (HsCore *core)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
-
   m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
 
   if (system_type == SYSTEM_NTSC)
@@ -1028,6 +1027,18 @@ mupen64plus_core_get_sample_rate (HsCore *core)
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
   return self->sample_rate;
+}
+
+static HsRegion
+mupen64plus_core_get_region (HsCore *core)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+  m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
+
+  if (system_type == SYSTEM_NTSC)
+    return HS_REGION_NTSC;
+  else
+    return HS_REGION_PAL;
 }
 
 static void
@@ -1069,6 +1080,8 @@ mupen64plus_core_class_init (Mupen64PlusCoreClass *klass)
   core_class->get_aspect_ratio = mupen64plus_core_get_aspect_ratio;
 
   core_class->get_sample_rate = mupen64plus_core_get_sample_rate;
+
+  core_class->get_region = mupen64plus_core_get_region;
 }
 
 static void
