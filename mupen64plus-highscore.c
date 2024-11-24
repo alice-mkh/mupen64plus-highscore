@@ -591,6 +591,37 @@ attach_plugin (Mupen64PlusCore   *self,
 }
 
 static gboolean
+get_is_high_res (Mupen64PlusCore *self)
+{
+  char name[21];
+  g_autofree char *lower = NULL;
+
+  memcpy (name, self->rom_header.Name, 20);
+
+  name[20] = '\0';
+
+  g_strstrip (name);
+
+  lower = g_ascii_strdown (name, 20);
+
+  return !g_strcmp0 (lower, "castlevania2") ||
+         !g_strcmp0 (lower, "dracula mokushiroku2") ||
+         !g_strcmp0 (lower, "hybrid heaven pal") ||
+         !g_strcmp0 (lower, "hybrid heaven jp") ||
+         !g_strcmp0 (lower, "hybrid heaven usa") ||
+         !g_strcmp0 (lower, "indiana jones") ||
+         !g_strcmp0 (lower, "perfect dark") ||
+         !g_strcmp0 (lower, "resident evil ii") ||
+         !g_strcmp0 (lower, "rogue squadron") ||
+         !g_strcmp0 (lower, "star wars ep1 racer") ||
+         !g_strcmp0 (lower, "turok 2: kiosk") ||
+         !g_strcmp0 (lower, "turok 2: seeds of ev") ||
+         !g_strcmp0 (lower, "v8: second offense") ||
+         !g_strcmp0 (lower, "world driver champ");
+
+}
+
+static gboolean
 mupen64plus_core_load_rom (HsCore      *core,
                            const char **rom_paths,
                            int          n_rom_paths,
@@ -678,11 +709,13 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   ConfigSaveSection ("CoreEvents");
 
+  gboolean is_high_res = get_is_high_res (self);
+
   // Change default resolution to match N64
   ConfigOpenSection ("Video-General", &config);
-  int value = 320;
+  int value = is_high_res ? 640 : 320;
   ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &value);
-  value = 240;
+  value = is_high_res ? 480 : 240;
   ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &value);
   ConfigSaveSection ("Video-General");
 
