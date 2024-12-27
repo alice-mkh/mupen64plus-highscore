@@ -5,6 +5,12 @@ project('mupen64plus-highscore', ['c', 'cpp'],
   ]
 )
 
+version = run_command('git', 'describe', '--always', '--tags').stdout().strip()
+
+if version == ''
+  version = meson.project_version()
+endif
+
 cc = meson.get_compiler('c')
 
 prefix = get_option('prefix')
@@ -75,6 +81,12 @@ shared_library('mupen64plus-highscore',
   install : true
 )
 
-install_data('mupen64plus.highscore',
-  install_dir : cores_dir,
+descriptor = configuration_data()
+descriptor.set('version', version)
+configure_file(
+  input: 'mupen64plus.highscore.in',
+  output: 'mupen64plus.highscore',
+  configuration: descriptor,
+  install_dir: cores_dir,
+  install: true
 )
