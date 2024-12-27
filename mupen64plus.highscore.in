@@ -1,6 +1,7 @@
 [Highscore]
 Name=Mupen64Plus
 Version=@version@
+Commit=@commit@
 Module=mupen64plus/mupen64plus-highscore.so
 Authors=Hacktarux;The Mupen64Plus Development Team;
 Copyright=Copyright (C) 2002 Hacktarux;Copyright (C) 2007-2014 The Mupen64Plus Development Team;

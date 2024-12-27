@@ -5,11 +5,8 @@ project('mupen64plus-highscore', ['c', 'cpp'],
   ]
 )
 
-version = run_command('git', 'describe', '--always', '--tags', '--dirty').stdout().strip()
-
-if version == ''
-  version = meson.project_version()
-endif
+version = meson.project_version()
+commit = run_command('git', 'describe', '--always', '--dirty').stdout().strip()
 
 cc = meson.get_compiler('c')
 
@@ -83,6 +80,7 @@ shared_library('mupen64plus-highscore',
 
 descriptor = configuration_data()
 descriptor.set('version', version)
+descriptor.set('commit', commit)
 configure_file(
   input: 'mupen64plus.highscore.in',
   output: 'mupen64plus.highscore',
