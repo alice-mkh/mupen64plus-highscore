@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <dlfcn.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #define SAMPLE_RATE 33600
 
@@ -30,6 +31,7 @@ typedef void (*hs_setup_audio_t) (HsCore *core, HsSampleRateChangedCallback samp
 typedef void (*hs_setup_input_t) (HsCore *core);
 typedef void (*hs_poll_input_t) (HsInputState *input_state);
 typedef void (*hs_set_controller_t) (guint player, gboolean present, HsNintendo64Pak pak);
+typedef bool (*parallel_rdp_is_supported_t) ();
 
 static hs_poll_input_t hs_poll_input;
 static hs_set_controller_t hs_set_controller;
@@ -719,6 +721,11 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &value);
   ConfigSaveSection ("Video-General");
 
+  ConfigOpenSection ("Video-Parallel", &config);
+  value = 1;
+  ConfigSetParameter (config, "DeinterlaceMode", M64TYPE_INT, &value);
+  ConfigSaveSection ("Video-Parallel");
+
   // Set up video
   self->context = hs_core_create_gl_context (core,
                                              HS_GL_PROFILE_CORE,
@@ -752,9 +759,26 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, "mupen64plus-video-GLideN64.so", error);
+  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, "mupen64plus-video-parallel.so", error);
   if (!self->gfx_plugin)
     return FALSE;
+
+  parallel_rdp_is_supported_t parallel_rdp_is_supported = dlsym (self->gfx_plugin, "parallel_rdp_is_supported");
+
+  if (parallel_rdp_is_supported && !parallel_rdp_is_supported ()) {
+    hs_core_log_literal (self, HS_LOG_INFO, "ParaLLEl-RDP is not compatible, falling back to GLideN64");
+
+    if (CoreDetachPlugin (M64PLUGIN_GFX) != M64ERR_SUCCESS) {
+      g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to detach ParaLLEl-RDP");
+      return FALSE;
+    }
+
+    dlclose (self->gfx_plugin);
+
+    self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, "mupen64plus-video-GLideN64.so", error);
+    if (!self->gfx_plugin)
+      return FALSE;
+  }
 
   self->audio_plugin = attach_plugin (self, M64PLUGIN_AUDIO, CORE_DIR, "mupen64plus-audio-highscore.so", error);
   if (!self->audio_plugin)
@@ -764,7 +788,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!self->input_plugin)
     return FALSE;
 
-  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, "mupen64plus-rsp-hle.so", error);
+  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, "mupen64plus-rsp-parallel.so", error);
   if (!self->rsp_plugin)
     return FALSE;
 

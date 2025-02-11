@@ -1,3 +1,6 @@
 mupen64plus-core
 mupen64plus-rsp-hle
 GLideN64
+parallel-rdp-standalone
+parallel-rsp
+gliden64-framebuffer-fix.patch
