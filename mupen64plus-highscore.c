@@ -13,6 +13,7 @@
 
 #define PLUGIN_VIDEO_GLIDEN64 "mupen64plus-video-GLideN64.so"
 #define PLUGIN_VIDEO_PARALLEL "mupen64plus-video-parallel.so"
+#define PLUGIN_RSP_HLE        "mupen64plus-rsp-hle.so"
 #define PLUGIN_RSP_PARALLEL   "mupen64plus-rsp-parallel.so"
 
 #define SAMPLE_RATE 33600
@@ -264,8 +265,12 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
 m64p_error
 video_gl_swap_buf (void)
 {
+  g_mutex_lock (&core->savestate_mutex);
+  gboolean is_loading = core->savestate_in_progress && core->savestate_load;
+  g_mutex_unlock (&core->savestate_mutex);
+
   // Occasionally we get black screen when pausing, we don't want that
-  if (!g_atomic_int_get (&core->paused))
+  if (!g_atomic_int_get (&core->paused) && !is_loading)
     hs_gl_context_swap_buffers (core->context);
 
   return M64ERR_SUCCESS;
@@ -763,25 +768,35 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_PARALLEL, error);
-  if (!self->gfx_plugin)
-    return FALSE;
+  gboolean force_fallback = !g_strcmp0 (g_getenv ("HIGHSCORE_M64P_FORCE_FALLBACK"), "1");
 
-  parallel_rdp_is_supported_t parallel_rdp_is_supported = dlsym (self->gfx_plugin, "parallel_rdp_is_supported");
-
-  if (parallel_rdp_is_supported && !parallel_rdp_is_supported ()) {
-    hs_core_log_literal (self, HS_LOG_INFO, "ParaLLEl-RDP is not compatible, falling back to GLideN64");
-
-    if (CoreDetachPlugin (M64PLUGIN_GFX) != M64ERR_SUCCESS) {
-      g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to detach ParaLLEl-RDP");
-      return FALSE;
-    }
-
-    dlclose (self->gfx_plugin);
-
+  if (force_fallback) {
     self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
     if (!self->gfx_plugin)
       return FALSE;
+  } else {
+    self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_PARALLEL, error);
+    if (!self->gfx_plugin)
+      return FALSE;
+
+    parallel_rdp_is_supported_t parallel_rdp_is_supported = dlsym (self->gfx_plugin, "parallel_rdp_is_supported");
+
+    if (parallel_rdp_is_supported && !parallel_rdp_is_supported ()) {
+      hs_core_log_literal (self, HS_LOG_INFO, "ParaLLEl-RDP is not compatible, falling back to GLideN64 and HLE RSP");
+
+      if (CoreDetachPlugin (M64PLUGIN_GFX) != M64ERR_SUCCESS) {
+        g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to detach ParaLLEl-RDP");
+        return FALSE;
+      }
+
+      dlclose (self->gfx_plugin);
+
+      self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
+      if (!self->gfx_plugin)
+        return FALSE;
+
+      force_fallback = TRUE;
+    }
   }
 
   self->audio_plugin = attach_plugin (self, M64PLUGIN_AUDIO, CORE_DIR, "mupen64plus-audio-highscore.so", error);
@@ -792,7 +807,11 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!self->input_plugin)
     return FALSE;
 
-  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_PARALLEL, error);
+  if (force_fallback)
+    self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_HLE, error);
+  else
+    self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_PARALLEL, error);
+
   if (!self->rsp_plugin)
     return FALSE;
 
