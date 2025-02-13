@@ -11,6 +11,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#define PLUGIN_VIDEO_GLIDEN64 "mupen64plus-video-GLideN64.so"
+#define PLUGIN_VIDEO_PARALLEL "mupen64plus-video-parallel.so"
+#define PLUGIN_RSP_PARALLEL   "mupen64plus-rsp-parallel.so"
+
 #define SAMPLE_RATE 33600
 
 static ptr_CoreStartup             CoreStartup;
@@ -759,7 +763,7 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, "mupen64plus-video-parallel.so", error);
+  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_PARALLEL, error);
   if (!self->gfx_plugin)
     return FALSE;
 
@@ -775,7 +779,7 @@ mupen64plus_core_load_rom (HsCore      *core,
 
     dlclose (self->gfx_plugin);
 
-    self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, "mupen64plus-video-GLideN64.so", error);
+    self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
     if (!self->gfx_plugin)
       return FALSE;
   }
@@ -788,7 +792,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!self->input_plugin)
     return FALSE;
 
-  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, "mupen64plus-rsp-parallel.so", error);
+  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_PARALLEL, error);
   if (!self->rsp_plugin)
     return FALSE;
 
