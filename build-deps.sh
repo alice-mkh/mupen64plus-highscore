@@ -31,9 +31,7 @@ sudo make install
 popd
 
 pushd parallel-rdp-standalone
-mkdir build
-cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build . --parallel
-sudo make install
+meson setup build --prefix=/usr --optimization=2
+ninja -C build
+sudo ninja -C build install
 popd
