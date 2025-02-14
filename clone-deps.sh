@@ -10,3 +10,13 @@ pushd GLideN64
 wget https://gitlab.gnome.org/World/highscore/-/raw/main/flatpak/cores/gliden64-framebuffer-fix.patch
 git am gliden64-framebuffer-fix.patch
 popd
+
+pushd parallel-rdp-standalone
+git remote add upstream https://github.com/Themaister/parallel-rdp-standalone
+git fetch upstream
+popd
+
+pushd parallel-rsp
+git remote add upstream https://github.com/libretro/parallel-rsp
+git fetch upstream
+popd
