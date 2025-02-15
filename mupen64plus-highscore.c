@@ -731,6 +731,10 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigSaveSection ("Video-General");
 
   ConfigOpenSection ("Video-Parallel", &config);
+  value = 0;
+  ConfigSetParameter (config, "VIBilerp", M64TYPE_INT, &value);
+  value = 0;
+  ConfigSetParameter (config, "VIDither", M64TYPE_INT, &value);
   value = 1;
   ConfigSetParameter (config, "DeinterlaceMode", M64TYPE_INT, &value);
   ConfigSaveSection ("Video-Parallel");
