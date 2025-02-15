@@ -28,7 +28,7 @@ cmake --build . --parallel
 sudo cmake --install .
 popd
 
-pushd parallel-rdp-standalone
+pushd parallel-rdp
 meson setup build --prefix=/usr --optimization=2
 ninja -C build
 sudo ninja -C build install
