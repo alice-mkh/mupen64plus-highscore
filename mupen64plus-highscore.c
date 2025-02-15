@@ -79,6 +79,9 @@ struct _Mupen64PlusCore
   // Lock savestate_mutex before accessing
   gboolean should_pause_again;
   GMutex savestate_mutex;
+
+  int width;
+  int height;
 };
 
 static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface);
@@ -212,6 +215,9 @@ m64p_error
 video_set_mode (int width, int height, int bpp, int mode, int flags)
 {
   hs_gl_context_set_size (core->context, width, height);
+
+  core->width = width;
+  core->height = height;
 
   return M64ERR_SUCCESS;
 }
@@ -1095,10 +1101,19 @@ mupen64plus_core_get_aspect_ratio (HsCore *core)
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
   m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
 
-  if (system_type == SYSTEM_NTSC)
-    return 4.0 / 3.0 * 120.0 / 119.0;
+  double width = self->width;
+  double height = self->height;
+  double par;
 
-  return 4.0 / 3.0;
+  if (width > 600.0 && height < 300)
+    height *= 2;
+
+  if (system_type == SYSTEM_NTSC)
+    par = 120.0 / 119.0;
+  else
+    par = 6.0 / 5.0;
+
+  return width / height * par;
 }
 
 static double
