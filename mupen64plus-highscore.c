@@ -17,6 +17,8 @@
 #define PLUGIN_RSP_PARALLEL   "mupen64plus-rsp-parallel.so"
 
 #define SAMPLE_RATE 33600
+#define OVERSCAN_V 8
+#define OVERSCAN_H 8
 
 static ptr_CoreStartup             CoreStartup;
 static ptr_CoreShutdown            CoreShutdown;
@@ -728,7 +730,7 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   gboolean is_high_res = get_is_high_res (self);
 
-  // Change default resolution to match N64
+  // Change default GLideN64 resolution to match N64, ParaLLEl handles it automatically
   ConfigOpenSection ("Video-General", &config);
   int value = is_high_res ? 640 : 320;
   ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &value);
@@ -739,6 +741,10 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigOpenSection ("Video-Parallel", &config);
   value = 1;
   ConfigSetParameter (config, "DeinterlaceMode", M64TYPE_INT, &value);
+  value = OVERSCAN_V;
+  ConfigSetParameter (config, "CropOverscanV", M64TYPE_INT, &value);
+  value = OVERSCAN_H;
+  ConfigSetParameter (config, "CropOverscanH", M64TYPE_INT, &value);
   ConfigSaveSection ("Video-Parallel");
 
   // Set up video
