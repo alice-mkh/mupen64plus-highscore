@@ -28,6 +28,7 @@ static ptr_CoreDetachPlugin        CoreDetachPlugin;
 static ptr_CoreOverrideVidExt      CoreOverrideVidExt;
 static ptr_ConfigOpenSection       ConfigOpenSection;
 static ptr_ConfigSaveSection       ConfigSaveSection;
+static ptr_ConfigDeleteSection     ConfigDeleteSection;
 static ptr_ConfigGetParamInt       ConfigGetParamInt;
 static ptr_ConfigSetParameter      ConfigSetParameter;
 static ptr_ConfigOverrideUserPaths ConfigOverrideUserPaths;
@@ -610,37 +611,6 @@ attach_plugin (Mupen64PlusCore   *self,
 }
 
 static gboolean
-get_is_high_res (Mupen64PlusCore *self)
-{
-  char name[21];
-  g_autofree char *lower = NULL;
-
-  memcpy (name, self->rom_header.Name, 20);
-
-  name[20] = '\0';
-
-  g_strstrip (name);
-
-  lower = g_ascii_strdown (name, 20);
-
-  return !g_strcmp0 (lower, "castlevania2") ||
-         !g_strcmp0 (lower, "dracula mokushiroku2") ||
-         !g_strcmp0 (lower, "hybrid heaven pal") ||
-         !g_strcmp0 (lower, "hybrid heaven jp") ||
-         !g_strcmp0 (lower, "hybrid heaven usa") ||
-         !g_strcmp0 (lower, "indiana jones") ||
-         !g_strcmp0 (lower, "perfect dark") ||
-         !g_strcmp0 (lower, "resident evil ii") ||
-         !g_strcmp0 (lower, "rogue squadron") ||
-         !g_strcmp0 (lower, "star wars ep1 racer") ||
-         !g_strcmp0 (lower, "turok 2: kiosk") ||
-         !g_strcmp0 (lower, "turok 2: seeds of ev") ||
-         !g_strcmp0 (lower, "v8: second offense") ||
-         !g_strcmp0 (lower, "world driver champ");
-
-}
-
-static gboolean
 mupen64plus_core_load_rom (HsCore      *core,
                            const char **rom_paths,
                            int          n_rom_paths,
@@ -674,6 +644,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   CoreOverrideVidExt      = dlsym (self->core_handle, "CoreOverrideVidExt");
   ConfigOpenSection       = dlsym (self->core_handle, "ConfigOpenSection");
   ConfigSaveSection       = dlsym (self->core_handle, "ConfigSaveSection");
+  ConfigDeleteSection     = dlsym (self->core_handle, "ConfigDeleteSection");
   ConfigGetParamInt       = dlsym (self->core_handle, "ConfigGetParamInt");
   ConfigSetParameter      = dlsym (self->core_handle, "ConfigSetParameter");
   ConfigOverrideUserPaths = dlsym (self->core_handle, "ConfigOverrideUserPaths");
@@ -728,18 +699,12 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   ConfigSaveSection ("CoreEvents");
 
-  gboolean is_high_res = get_is_high_res (self);
-
   // Change default GLideN64 resolution to match N64, ParaLLEl handles it automatically
-  ConfigOpenSection ("Video-General", &config);
-  int value = is_high_res ? 640 : 320;
-  ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &value);
-  value = is_high_res ? 480 : 240;
-  ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &value);
-  ConfigSaveSection ("Video-General");
+  ConfigDeleteSection ("Video-General");
+  ConfigDeleteSection ("Video-GLideN64");
 
   ConfigOpenSection ("Video-Parallel", &config);
-  value = 1;
+  int value = 1;
   ConfigSetParameter (config, "DeinterlaceMode", M64TYPE_INT, &value);
   value = OVERSCAN_V;
   ConfigSetParameter (config, "CropOverscanV", M64TYPE_INT, &value);
