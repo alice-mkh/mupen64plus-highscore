@@ -714,7 +714,7 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   // Set up video
   self->context = hs_core_create_gl_context (core,
-                                             HS_GL_PROFILE_CORE,
+                                             HS_GL_API_GL,
                                              3, 3,
                                              HS_GL_FLAGS_DEPTH | HS_GL_FLAGS_FLIPPED);
 
