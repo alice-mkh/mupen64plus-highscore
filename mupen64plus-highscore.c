@@ -85,6 +85,7 @@ struct _Mupen64PlusCore
 
   int width;
   int height;
+  int colorburst_phase;
 };
 
 static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface);
@@ -839,6 +840,9 @@ mupen64plus_core_run_frame (HsCore *core)
 
   if (g_atomic_int_get (&self->paused))
     CoreDoCommand (M64CMD_ADVANCE_FRAME, 0, NULL);
+
+  hs_gl_context_set_colorburst_phase (self->context, self->colorburst_phase);
+  self->colorburst_phase ^= 1;
 }
 
 static void
