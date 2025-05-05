@@ -282,7 +282,7 @@ video_gl_swap_buf (void)
   // Occasionally we get black screen when pausing, we don't want that
   if (!g_atomic_int_get (&core->paused) && !is_loading) {
     hs_gl_context_set_overscan (core->context,
-                                &HS_BORDER_INIT (OVERSCAN_H * core->width / 320,
+                                &HS_BORDER_INIT (OVERSCAN_H * core->width / 640,
                                                  OVERSCAN_V * core->height / 240));
 
     hs_gl_context_swap_buffers (core->context);
