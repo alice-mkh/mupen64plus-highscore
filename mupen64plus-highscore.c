@@ -280,8 +280,13 @@ video_gl_swap_buf (void)
   g_mutex_unlock (&core->savestate_mutex);
 
   // Occasionally we get black screen when pausing, we don't want that
-  if (!g_atomic_int_get (&core->paused) && !is_loading)
+  if (!g_atomic_int_get (&core->paused) && !is_loading) {
+    hs_gl_context_set_overscan (core->context,
+                                &HS_BORDER_INIT (OVERSCAN_H * core->width / 320,
+                                                 OVERSCAN_V * core->height / 240));
+
     hs_gl_context_swap_buffers (core->context);
+  }
 
   return M64ERR_SUCCESS;
 }
@@ -707,9 +712,8 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigOpenSection ("Video-Parallel", &config);
   int value = 1;
   ConfigSetParameter (config, "DeinterlaceMode", M64TYPE_INT, &value);
-  value = OVERSCAN_V;
+  value = 0;
   ConfigSetParameter (config, "CropOverscanV", M64TYPE_INT, &value);
-  value = OVERSCAN_H;
   ConfigSetParameter (config, "CropOverscanH", M64TYPE_INT, &value);
   ConfigSaveSection ("Video-Parallel");
 
