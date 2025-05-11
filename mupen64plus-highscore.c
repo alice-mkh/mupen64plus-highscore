@@ -724,7 +724,6 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigSaveSection ("CoreEvents");
 
   // Change default GLideN64 resolution to match N64, ParaLLEl handles it automatically
-  ConfigDeleteSection ("Video-General");
   ConfigDeleteSection ("Video-GLideN64");
   ConfigDeleteSection ("Video-Parallel");
 
@@ -890,6 +889,12 @@ mupen64plus_core_run_frame (HsCore *core)
 
       if (CoreDoCommand (M64CMD_CORE_STATE_SET, M64CORE_VIDEO_SIZE, &size) == M64ERR_SUCCESS)
         self->pending_resize = TRUE;
+
+      m64p_handle config;
+      ConfigOpenSection ("Video-General", &config);
+      ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &new_width);
+      ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &new_height);
+      ConfigSaveSection ("Video-General");
     }
   }
 
