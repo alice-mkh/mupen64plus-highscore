@@ -880,7 +880,7 @@ mupen64plus_core_run_frame (HsCore *core)
       mode = HS_INTERLACING_NONE;
   }
 
-  if (self->use_fallback && !self->pending_resize && self->height > 0) {
+  if (self->use_fallback && !self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
     // GLideN64 doesn't resize itself for progressive/interlaced mode, so we do it manually
     int new_width = 640;
     int new_height = interlaced ? 480 : 240;
