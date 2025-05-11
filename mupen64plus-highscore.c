@@ -2,6 +2,7 @@
 
 #include <mupen64plus/m64p_common.h>
 #include <mupen64plus/m64p_config.h>
+#include <mupen64plus/m64p_debugger.h>
 #include <mupen64plus/m64p_frontend.h>
 #include <mupen64plus/m64p_plugin.h>
 #include <mupen64plus/m64p_types.h>
@@ -20,6 +21,10 @@
 #define OVERSCAN_V 8
 #define OVERSCAN_H 8
 
+#define VI_STATUS_REG 0
+#define VI_CURRENT_LINE_REG 4
+#define VI_SERRATE_FLAG (1 << 6)
+
 static ptr_CoreStartup             CoreStartup;
 static ptr_CoreShutdown            CoreShutdown;
 static ptr_CoreDoCommand           CoreDoCommand;
@@ -32,6 +37,7 @@ static ptr_ConfigDeleteSection     ConfigDeleteSection;
 static ptr_ConfigGetParamInt       ConfigGetParamInt;
 static ptr_ConfigSetParameter      ConfigSetParameter;
 static ptr_ConfigOverrideUserPaths ConfigOverrideUserPaths;
+static ptr_DebugMemGetPointer      DebugMemGetPointer;
 static ptr_PluginGetVersion        PluginGetVersion;
 
 typedef void (*HsSampleRateChangedCallback) (HsCore *core, double sample_rate);
@@ -86,6 +92,10 @@ struct _Mupen64PlusCore
   int width;
   int height;
   int colorburst_phase;
+  gboolean use_fallback;
+  gboolean pending_resize;
+
+  guint32 *vi_regs;
 };
 
 static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface);
@@ -222,6 +232,7 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
 
   core->width = width;
   core->height = height;
+  core->pending_resize = FALSE;
 
   return M64ERR_SUCCESS;
 }
@@ -306,7 +317,13 @@ video_toggle_fs (void)
 m64p_error
 video_resize_window (int width, int height)
 {
-  return M64ERR_UNSUPPORTED;
+  hs_gl_context_set_size (core->context, width, height);
+
+  core->width = width;
+  core->height = height;
+  core->pending_resize = FALSE;
+
+  return M64ERR_SUCCESS;//UNSUPPORTED;
 }
 
 uint32_t
@@ -654,6 +671,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigGetParamInt       = dlsym (self->core_handle, "ConfigGetParamInt");
   ConfigSetParameter      = dlsym (self->core_handle, "ConfigSetParameter");
   ConfigOverrideUserPaths = dlsym (self->core_handle, "ConfigOverrideUserPaths");
+  DebugMemGetPointer      = dlsym (self->core_handle, "DebugMemGetPointer");
   PluginGetVersion        = dlsym (self->core_handle, "PluginGetVersion");
 
   int api_version;
@@ -708,9 +726,15 @@ mupen64plus_core_load_rom (HsCore      *core,
   // Change default GLideN64 resolution to match N64, ParaLLEl handles it automatically
   ConfigDeleteSection ("Video-General");
   ConfigDeleteSection ("Video-GLideN64");
+  ConfigDeleteSection ("Video-Parallel");
+
+  ConfigOpenSection ("Video-GLideN64", &config);
+  int value = 0;
+  ConfigSetParameter (config, "AspectRatio", M64TYPE_INT, &value);
+  ConfigSaveSection ("Video-GLideN64");
 
   ConfigOpenSection ("Video-Parallel", &config);
-  int value = 1;
+  value = 1;
   ConfigSetParameter (config, "DeinterlaceMode", M64TYPE_INT, &value);
   value = 0;
   ConfigSetParameter (config, "CropOverscanV", M64TYPE_INT, &value);
@@ -750,9 +774,9 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  gboolean force_fallback = !g_strcmp0 (g_getenv ("HIGHSCORE_M64P_FORCE_FALLBACK"), "1");
+  self->use_fallback = !g_strcmp0 (g_getenv ("HIGHSCORE_M64P_FORCE_FALLBACK"), "1");
 
-  if (force_fallback) {
+  if (self->use_fallback) {
     self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
     if (!self->gfx_plugin)
       return FALSE;
@@ -777,7 +801,7 @@ mupen64plus_core_load_rom (HsCore      *core,
       if (!self->gfx_plugin)
         return FALSE;
 
-      force_fallback = TRUE;
+      self->use_fallback = TRUE;
     }
   }
 
@@ -789,7 +813,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!self->input_plugin)
     return FALSE;
 
-  if (force_fallback)
+  if (self->use_fallback)
     self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_HLE, error);
   else
     self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_PARALLEL, error);
@@ -809,6 +833,8 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   hs_setup_audio (core, sample_rate_cb);
   hs_setup_input (core);
+
+  self->vi_regs = DebugMemGetPointer (M64P_DBG_PTR_VI_REG);
 
   return TRUE;
 }
@@ -842,11 +868,39 @@ mupen64plus_core_run_frame (HsCore *core)
 
   g_mutex_unlock (&self->audio_mutex);
 
+  gboolean interlaced = self->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG;
+  HsInterlacingMode mode;
+
+  if (interlaced) {
+    if (self->vi_regs[VI_CURRENT_LINE_REG] > 0)
+      mode = HS_INTERLACING_EVEN_FIELD;
+    else
+      mode = HS_INTERLACING_ODD_FIELD;
+  } else {
+      mode = HS_INTERLACING_NONE;
+  }
+
+  if (self->use_fallback && !self->pending_resize && self->height > 0) {
+    // GLideN64 doesn't resize itself for progressive/interlaced mode, so we do it manually
+    int new_width = 640;
+    int new_height = interlaced ? 480 : 240;
+
+    if (new_width != self->width || new_height != self->height) {
+      int size = (new_width << 16) + new_height;
+
+      if (CoreDoCommand (M64CMD_CORE_STATE_SET, M64CORE_VIDEO_SIZE, &size) == M64ERR_SUCCESS)
+        self->pending_resize = TRUE;
+    }
+  }
+
   if (g_atomic_int_get (&self->paused))
     CoreDoCommand (M64CMD_ADVANCE_FRAME, 0, NULL);
 
+  hs_gl_context_set_interlacing (self->context, mode);
   hs_gl_context_set_colorburst_phase (self->context, self->colorburst_phase);
-  self->colorburst_phase ^= 1;
+
+  if (mode != HS_INTERLACING_ODD_FIELD)
+    self->colorburst_phase ^= 1;
 }
 
 static void
