@@ -56,8 +56,10 @@ struct _Mupen64PlusCore
 {
   HsCore parent_instance;
 
+  // Lock video_mutex before accessing
   HsGLContext *context;
   GThread *emulation_thread;
+  GMutex *video_mutex;
 
   AUDIO_INFO audio_info;
   double sample_rate;
@@ -89,10 +91,17 @@ struct _Mupen64PlusCore
   gboolean should_pause_again;
   GMutex savestate_mutex;
 
+  // Lock video_mutex before accessing
   int width;
+  // Lock video_mutex before accessing
   int height;
+  // Lock video_mutex before accessing
   int colorburst_phase;
+  // Lock video_mutex before accessing
+  HsInterlacingMode interlacing;
+  // Lock video_mutex before accessing
   gboolean use_fallback;
+  // Lock video_mutex before accessing
   gboolean pending_resize;
 
   guint32 *vi_regs;
@@ -195,11 +204,17 @@ video_init (void)
 {
   g_autoptr (GError) error = NULL;
 
+  g_mutex_lock (&core->video_mutex);
+
   if (!hs_gl_context_realize (core->context, &error)) {
     hs_core_log (core, HS_LOG_CRITICAL, "Failed to realize GL context: %s", error->message);
 
+    g_mutex_unlock (&core->video_mutex);
+
     return M64ERR_SYSTEM_FAIL;
   }
+
+  g_mutex_unlock (&core->video_mutex);
 
   return M64ERR_SUCCESS;
 }
@@ -207,7 +222,9 @@ video_init (void)
 m64p_error
 video_quit (void)
 {
+  g_mutex_lock (&core->video_mutex);
   hs_gl_context_unrealize (core->context);
+  g_mutex_unlock (&core->video_mutex);
 
   return M64ERR_SUCCESS;
 }
@@ -228,11 +245,13 @@ video_list_rates (m64p_2d_size size, int *rates, int *n_rates)
 m64p_error
 video_set_mode (int width, int height, int bpp, int mode, int flags)
 {
+  g_mutex_lock (&core->video_mutex);
   hs_gl_context_set_size (core->context, width, height);
 
   core->width = width;
   core->height = height;
   core->pending_resize = FALSE;
+  g_mutex_unlock (&core->video_mutex);
 
   return M64ERR_SUCCESS;
 }
@@ -246,7 +265,13 @@ video_set_mode_with_rate (int width, int height, int refresh_rate, int bpp, int 
 m64p_function
 video_gl_get_proc (const char *name)
 {
-  return hs_gl_context_get_proc_address (core->context, name);
+  gpointer ret;
+
+  g_mutex_lock (&core->video_mutex);
+  ret = hs_gl_context_get_proc_address (core->context, name);
+  g_mutex_unlock (&core->video_mutex);
+
+  return ret;
 }
 
 m64p_error
@@ -292,11 +317,14 @@ video_gl_swap_buf (void)
 
   // Occasionally we get black screen when pausing, we don't want that
   if (!g_atomic_int_get (&core->paused) && !is_loading) {
+    g_mutex_lock (&core->video_mutex);
     hs_gl_context_set_overscan (core->context,
                                 &HS_BORDER_INIT (OVERSCAN_H * core->width / 640,
                                                  OVERSCAN_V * core->height / 240));
-
+    hs_gl_context_set_interlacing (core->context, core->interlacing);
+    hs_gl_context_set_colorburst_phase (core->context, core->colorburst_phase);
     hs_gl_context_swap_buffers (core->context);
+    g_mutex_unlock (&core->video_mutex);
   }
 
   return M64ERR_SUCCESS;
@@ -317,19 +345,27 @@ video_toggle_fs (void)
 m64p_error
 video_resize_window (int width, int height)
 {
+  g_mutex_lock (&core->video_mutex);
   hs_gl_context_set_size (core->context, width, height);
 
   core->width = width;
   core->height = height;
   core->pending_resize = FALSE;
+  g_mutex_unlock (&core->video_mutex);
 
-  return M64ERR_SUCCESS;//UNSUPPORTED;
+  return M64ERR_SUCCESS;
 }
 
 uint32_t
 video_gl_get_default_framebuffer (void)
 {
-  return hs_gl_context_get_default_framebuffer (core->context);
+  uint32_t ret;
+
+  g_mutex_lock (&core->video_mutex);
+  ret = hs_gl_context_get_default_framebuffer (core->context);
+  g_mutex_unlock (&core->video_mutex);
+
+  return ret;
 }
 
 m64p_error
@@ -868,27 +904,40 @@ mupen64plus_core_run_frame (HsCore *core)
   g_mutex_unlock (&self->audio_mutex);
 
   gboolean interlaced = self->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG;
-  HsInterlacingMode mode;
 
+  g_mutex_lock (&self->video_mutex);
   if (interlaced) {
     if (self->vi_regs[VI_CURRENT_LINE_REG] > 0)
-      mode = HS_INTERLACING_EVEN_FIELD;
+      self->interlacing = HS_INTERLACING_EVEN_FIELD;
     else
-      mode = HS_INTERLACING_ODD_FIELD;
+      self->interlacing = HS_INTERLACING_ODD_FIELD;
   } else {
-      mode = HS_INTERLACING_NONE;
+      self->interlacing = HS_INTERLACING_NONE;
   }
+  g_mutex_unlock (&self->video_mutex);
 
   if (self->use_fallback && !self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
     // GLideN64 doesn't resize itself for progressive/interlaced mode, so we do it manually
     int new_width = 640;
     int new_height = interlaced ? 480 : 240;
 
-    if (new_width != self->width || new_height != self->height) {
+    g_mutex_lock (&self->video_mutex);
+    int old_width = self->width;
+    int old_height = self->height;
+    g_mutex_unlock (&self->video_mutex);
+
+    if (new_width != old_width || new_height != old_height) {
       int size = (new_width << 16) + new_height;
 
-      if (CoreDoCommand (M64CMD_CORE_STATE_SET, M64CORE_VIDEO_SIZE, &size) == M64ERR_SUCCESS)
-        self->pending_resize = TRUE;
+      g_mutex_lock (&self->video_mutex);
+      self->pending_resize = TRUE;
+      g_mutex_unlock (&self->video_mutex);
+
+      if (CoreDoCommand (M64CMD_CORE_STATE_SET, M64CORE_VIDEO_SIZE, &size) != M64ERR_SUCCESS) {
+        g_mutex_lock (&self->video_mutex);
+        self->pending_resize = FALSE;
+        g_mutex_unlock (&self->video_mutex);
+      }
 
       m64p_handle config;
       ConfigOpenSection ("Video-General", &config);
@@ -901,11 +950,18 @@ mupen64plus_core_run_frame (HsCore *core)
   if (g_atomic_int_get (&self->paused))
     CoreDoCommand (M64CMD_ADVANCE_FRAME, 0, NULL);
 
-  hs_gl_context_set_interlacing (self->context, mode);
+  g_mutex_lock (&self->video_mutex);
+
   hs_gl_context_set_colorburst_phase (self->context, self->colorburst_phase);
 
-  if (mode != HS_INTERLACING_ODD_FIELD)
+  hs_gl_context_set_overscan (self->context,
+                              &HS_BORDER_INIT (OVERSCAN_H * self->width / 640,
+                                               OVERSCAN_V * self->height / 240));
+
+  if (self->interlacing != HS_INTERLACING_ODD_FIELD)
     self->colorburst_phase ^= 1;
+
+  g_mutex_unlock (&self->video_mutex);
 }
 
 static void
@@ -1139,19 +1195,14 @@ mupen64plus_core_get_aspect_ratio (HsCore *core)
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
   m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
 
-  double width = self->width;
-  double height = self->height;
   double par;
-
-  if (width > 600.0 && height < 300)
-    height *= 2;
 
   if (system_type == SYSTEM_NTSC)
     par = 120.0 / 119.0;
   else
     par = 6.0 / 5.0;
 
-  return width / height * par;
+  return 4.0 / 3.0 * par;
 }
 
 static double
