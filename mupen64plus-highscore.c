@@ -506,6 +506,12 @@ try_migrate_libretro_save (Mupen64PlusCore  *self,
     return TRUE;
   }
 
+  g_autoptr (GFile) cache_dir = g_file_new_for_path (cache_path);
+  if (!g_file_query_exists (cache_dir, NULL) &&
+      !g_file_make_directory_with_parents (cache_dir, NULL, error)) {
+    return FALSE;
+  }
+
   // Make a temporary dir
   g_autofree char *tmp_path = g_build_filename (cache_path, "libretro-save-XXXXXX", NULL);
   tmp_path = g_mkdtemp (tmp_path);
