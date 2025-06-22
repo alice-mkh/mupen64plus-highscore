@@ -818,6 +818,8 @@ mupen64plus_core_load_rom (HsCore      *core,
   self->use_fallback = !g_strcmp0 (g_getenv ("HIGHSCORE_M64P_FORCE_FALLBACK"), "1");
 
   if (self->use_fallback) {
+    hs_core_log_literal (self, HS_LOG_MESSAGE, "HIGHSCORE_M64P_FORCE_FALLBACK=1 is set, using GLideN64 and HLE RSP");
+
     self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
     if (!self->gfx_plugin)
       return FALSE;
@@ -829,7 +831,7 @@ mupen64plus_core_load_rom (HsCore      *core,
     parallel_rdp_is_supported_t parallel_rdp_is_supported = dlsym (self->gfx_plugin, "parallel_rdp_is_supported");
 
     if (parallel_rdp_is_supported && !parallel_rdp_is_supported ()) {
-      hs_core_log_literal (self, HS_LOG_INFO, "ParaLLEl-RDP is not compatible, falling back to GLideN64 and HLE RSP");
+      hs_core_log_literal (self, HS_LOG_MESSAGE, "ParaLLEl-RDP is not compatible, falling back to GLideN64 and HLE RSP");
 
       if (CoreDetachPlugin (M64PLUGIN_GFX) != M64ERR_SUCCESS) {
         g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to detach ParaLLEl-RDP");
