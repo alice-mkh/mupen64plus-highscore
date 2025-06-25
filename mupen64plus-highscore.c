@@ -972,10 +972,15 @@ mupen64plus_core_run_frame (HsCore *core)
   g_mutex_unlock (&self->video_mutex);
 }
 
-static void
-mupen64plus_core_reset (HsCore *core, gboolean hard)
+static gboolean
+mupen64plus_core_reset (HsCore *core, gboolean hard, GError **error)
 {
-  CoreDoCommand (M64CMD_RESET, hard, NULL);
+  if (CoreDoCommand (M64CMD_RESET, hard, NULL) != M64ERR_SUCCESS) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to reset game");
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 static void
