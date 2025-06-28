@@ -12,8 +12,7 @@ cc = meson.get_compiler('c')
 
 prefix = get_option('prefix')
 libdir = prefix / get_option('libdir')
-cores_dir = prefix / libdir / 'highscore' / 'cores'
-cores_dir_mupen = cores_dir / 'mupen64plus'
+core_dir = prefix / libdir / 'highscore' / 'cores' / 'mupen64plus'
 
 data_dir = prefix / get_option('datadir') / 'mupen64plus'
 plugins_dir = prefix / libdir / 'mupen64plus'
@@ -42,7 +41,7 @@ shared_library('mupen64plus-audio-highscore',
   dependencies : mupen64plus_deps,
   include_directories : mupen64plus_include_dirs,
   name_prefix : '',
-  install_dir : cores_dir_mupen,
+  install_dir : core_dir,
   install : true
 )
 
@@ -53,7 +52,7 @@ shared_library('mupen64plus-input-highscore',
   dependencies : mupen64plus_deps,
   include_directories : mupen64plus_include_dirs,
   name_prefix : '',
-  install_dir : cores_dir_mupen,
+  install_dir : core_dir,
   install : true
 )
 
@@ -62,10 +61,10 @@ mupen64plus_source = [
 ]
 
 mupen64plus_c_args = [
-  '-DCORE_DIR="' + cores_dir_mupen + '"',
-  '-DDATA_DIR="' + data_dir + '"',
-  '-DLIB_DIR="' + libdir + '"',
-  '-DPLUGINS_DIR="' + plugins_dir + '"',
+  '-DCORE_DIR="@0@"'.format(core_dir),
+  '-DDATA_DIR="@0@"'.format(data_dir),
+  '-DLIB_DIR="@0@"'.format(libdir),
+  '-DPLUGINS_DIR="@0@"'.format(plugins_dir),
 ]
 
 shared_library('mupen64plus-highscore',
@@ -74,7 +73,7 @@ shared_library('mupen64plus-highscore',
   include_directories : mupen64plus_include_dirs,
   c_args : mupen64plus_c_args,
   name_prefix : '',
-  install_dir : cores_dir_mupen,
+  install_dir : core_dir,
   install : true
 )
 
@@ -85,6 +84,6 @@ configure_file(
   input: 'mupen64plus.highscore.in',
   output: 'mupen64plus.highscore',
   configuration: descriptor,
-  install_dir: cores_dir,
+  install_dir: core_dir,
   install: true
 )
