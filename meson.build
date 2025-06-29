@@ -12,7 +12,10 @@ cc = meson.get_compiler('c')
 
 prefix = get_option('prefix')
 libdir = prefix / get_option('libdir')
-core_dir = prefix / libdir / 'highscore' / 'cores' / 'mupen64plus'
+core_dir = get_option('core_install_dir')
+if core_dir == ''
+  core_dir = libdir / 'highscore' / 'cores' / 'mupen64plus'
+endif
 
 data_dir = prefix / get_option('datadir') / 'mupen64plus'
 plugins_dir = prefix / libdir / 'mupen64plus'
