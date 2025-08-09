@@ -103,6 +103,10 @@ struct _Mupen64PlusCore
   gboolean use_fallback;
   // Lock video_mutex before accessing
   gboolean pending_resize;
+  // Lock video_mutex before accessing
+  int pending_width;
+  // Lock video_mutex before accessing
+  int pending_height;
 
   guint32 *vi_regs;
 };
@@ -318,6 +322,15 @@ video_gl_swap_buf (void)
   // Occasionally we get black screen when pausing, we don't want that
   if (!g_atomic_int_get (&core->paused) && !is_loading) {
     g_mutex_lock (&core->video_mutex);
+
+    if (core->pending_resize) {
+      hs_gl_context_set_size (core->context, core->pending_width, core->pending_height);
+
+      core->width = core->pending_width;
+      core->height = core->pending_height;
+      core->pending_resize = FALSE;
+    }
+
     hs_gl_context_set_overscan (core->context,
                                 &HS_BORDER_INIT (OVERSCAN_H * core->width / 640,
                                                  OVERSCAN_V * core->height / 240));
@@ -942,6 +955,8 @@ mupen64plus_core_run_frame (HsCore *core)
 
       g_mutex_lock (&self->video_mutex);
       self->pending_resize = TRUE;
+      self->pending_width = new_width;
+      self->pending_height = new_height;
       g_mutex_unlock (&self->video_mutex);
 
       if (CoreDoCommand (M64CMD_CORE_STATE_SET, M64CORE_VIDEO_SIZE, &size) != M64ERR_SUCCESS) {
