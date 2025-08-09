@@ -11,9 +11,7 @@ git pull origin master
 popd
 
 pushd GLideN64
-git reset --hard origin/master
 git pull origin master
-git am gliden64-resize-fix.patch
 popd
 
 pushd parallel-rsp
