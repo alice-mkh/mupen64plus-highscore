@@ -7,9 +7,7 @@ git clone https://github.com/highscore-emu/parallel-rdp
 git clone https://github.com/highscore-emu/parallel-rsp
 
 pushd GLideN64
-wget https://gitlab.gnome.org/World/highscore/-/raw/main/flatpak/cores/gliden64-framebuffer-fix.patch
 wget https://gitlab.gnome.org/World/highscore/-/raw/main/flatpak/cores/gliden64-resize-fix.patch
-git am gliden64-framebuffer-fix.patch
 git am gliden64-resize-fix.patch
 popd
 
