@@ -924,7 +924,10 @@ mupen64plus_core_run_frame (HsCore *core)
   }
   g_mutex_unlock (&self->video_mutex);
 
+  g_mutex_lock (&self->video_mutex);
   if (self->use_fallback && !self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
+    g_mutex_unlock (&self->video_mutex);
+
     // GLideN64 doesn't resize itself for progressive/interlaced mode, so we do it manually
     int new_width = 640;
     int new_height = interlaced ? 480 : 240;
@@ -953,6 +956,8 @@ mupen64plus_core_run_frame (HsCore *core)
       ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &new_height);
       ConfigSaveSection ("Video-General");
     }
+  } else {
+    g_mutex_unlock (&self->video_mutex);
   }
 
   if (g_atomic_int_get (&self->paused))
