@@ -100,7 +100,7 @@ struct _Mupen64PlusCore
   // Lock video_mutex before accessing
   HsInterlacingMode interlacing;
   // Lock video_mutex before accessing
-  gboolean use_fallback;
+  gboolean use_hle;
   // Lock video_mutex before accessing
   gboolean pending_resize;
   // Lock video_mutex before accessing
@@ -287,10 +287,10 @@ video_gl_set_attr (m64p_GLattr attr, int value)
 m64p_error
 video_gl_get_attr (m64p_GLattr attr, int *value)
 {
-  // Just hardcode GLideN64's values. If we switch to another plugin
-  // in future, we'll just update these, but it's much simpler than
-  // making frontend handle all of these, and as a separate calls too,
-  // with no notification when the plugin is done setting them.
+  // Just hardcode GLideN64's and ParaLLEl-RDP values. If we switch to
+  // another plugin in future, we'll just update these, but it's much
+  // simpler than making frontend handle all of these, and as a separate
+  // calls too, with no notification when the plugin is done setting them.
   int values[] = {
     1,  // M64P_GL_DOUBLEBUFFER
     32, // M64P_GL_BUFFER_SIZE
@@ -778,7 +778,6 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   ConfigSaveSection ("CoreEvents");
 
-  // Change default GLideN64 resolution to match N64, ParaLLEl handles it automatically
   ConfigDeleteSection ("Video-GLideN64");
   ConfigDeleteSection ("Video-Parallel");
 
@@ -836,10 +835,10 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  self->use_fallback = !g_strcmp0 (g_getenv ("HIGHSCORE_M64P_FORCE_FALLBACK"), "1");
+  self->use_hle = !g_strcmp0 (g_getenv ("HIGHSCORE_M64P_PREFER_HLE"), "1");
 
-  if (self->use_fallback) {
-    hs_core_log_literal (self, HS_LOG_MESSAGE, "HIGHSCORE_M64P_FORCE_FALLBACK=1 is set, using GLideN64 and HLE RSP");
+  if (self->use_hle) {
+    hs_core_log_literal (self, HS_LOG_MESSAGE, "HIGHSCORE_M64P_PREFER_HLE=1 is set, using GLideN64 and HLE RSP");
 
     self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
     if (!self->gfx_plugin)
@@ -865,7 +864,7 @@ mupen64plus_core_load_rom (HsCore      *core,
       if (!self->gfx_plugin)
         return FALSE;
 
-      self->use_fallback = TRUE;
+      self->use_hle = TRUE;
     }
   }
 
@@ -877,7 +876,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!self->input_plugin)
     return FALSE;
 
-  if (self->use_fallback)
+  if (self->use_hle)
     self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_HLE, error);
   else
     self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_PARALLEL, error);
@@ -946,7 +945,7 @@ mupen64plus_core_run_frame (HsCore *core)
   g_mutex_unlock (&self->video_mutex);
 
   g_mutex_lock (&self->video_mutex);
-  if (self->use_fallback && !self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
+  if (self->use_hle && !self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
     g_mutex_unlock (&self->video_mutex);
 
     // GLideN64 doesn't resize itself for progressive/interlaced mode, so we do it manually
