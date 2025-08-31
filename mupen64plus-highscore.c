@@ -292,9 +292,9 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
   // simpler than making frontend handle all of these, and as a separate
   // calls too, with no notification when the plugin is done setting them.
   int values[] = {
-    1,  // M64P_GL_DOUBLEBUFFER
+    core->use_hle ? 1 : 0,  // M64P_GL_DOUBLEBUFFER
     32, // M64P_GL_BUFFER_SIZE
-    16, // M64P_GL_DEPTH_SIZE
+    core->use_hle ? 16 : 0,  // M64P_GL_DEPTH_SIZE
     8,  // M64P_GL_RED_SIZE
     8,  // M64P_GL_GREEN_SIZE
     8,  // M64P_GL_BLUE_SIZE
