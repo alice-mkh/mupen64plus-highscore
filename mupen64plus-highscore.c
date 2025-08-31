@@ -785,6 +785,14 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigOpenSection ("Video-GLideN64", &config);
   int value = 0;
   ConfigSetParameter (config, "AspectRatio", M64TYPE_INT, &value);
+  value = 1;
+  ConfigSetParameter (config, "UseNativeResolutionFactor", M64TYPE_INT, &value);
+  value = 1;
+  ConfigSetParameter (config, "EnableDitheringPattern", M64TYPE_INT, &value);
+  value = 0;
+  ConfigSetParameter (config, "bilinearMode", M64TYPE_INT, &value);
+  value = 2;
+  ConfigSetParameter (config, "MultiSampling", M64TYPE_INT, &value);
   ConfigSaveSection ("Video-GLideN64");
 
   ConfigOpenSection ("Video-Parallel", &config);
