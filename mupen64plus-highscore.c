@@ -107,7 +107,7 @@ struct _Mupen64PlusCore
 
   guint32 *vi_regs;
 
-  gboolean prefer_hle;
+  HsNintendo64EmulationMode mode;
 };
 
 static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface);
@@ -291,9 +291,9 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
   // simpler than making frontend handle all of these, and as a separate
   // calls too, with no notification when the plugin is done setting them.
   int values[] = {
-    core->prefer_hle ? 1 : 0,  // M64P_GL_DOUBLEBUFFER
+    (core->mode == HS_NINTENDO_64_HLE) ? 1 : 0,  // M64P_GL_DOUBLEBUFFER
     32, // M64P_GL_BUFFER_SIZE
-    core->prefer_hle ? 16 : 0,  // M64P_GL_DEPTH_SIZE
+    (core->mode == HS_NINTENDO_64_HLE) ? 16 : 0,  // M64P_GL_DEPTH_SIZE
     8,  // M64P_GL_RED_SIZE
     8,  // M64P_GL_GREEN_SIZE
     8,  // M64P_GL_BLUE_SIZE
@@ -834,8 +834,17 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR,
-                                    self->prefer_hle ? PLUGIN_VIDEO_GLIDEN64 : PLUGIN_VIDEO_PARALLEL, error);
+  const char *gfx_plugin, *rsp_plugin;
+
+  if (self->mode == HS_NINTENDO_64_HLE) {
+    gfx_plugin = PLUGIN_VIDEO_GLIDEN64;
+    rsp_plugin = PLUGIN_RSP_HLE;
+  } else {
+    gfx_plugin = PLUGIN_VIDEO_PARALLEL;
+    rsp_plugin = PLUGIN_RSP_PARALLEL;
+  }
+
+  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, gfx_plugin, error);
   if (!self->gfx_plugin)
     return FALSE;
 
@@ -847,8 +856,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!self->input_plugin)
     return FALSE;
 
-  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR,
-                                    self->prefer_hle ? PLUGIN_RSP_HLE : PLUGIN_RSP_PARALLEL, error);
+  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, rsp_plugin, error);
   if (!self->rsp_plugin)
     return FALSE;
 
@@ -1304,7 +1312,7 @@ mupen64plus_nintendo_64_core_set_emulation_mode (HsNintendo64Core *core, HsNinte
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
 
-  self->prefer_hle = (mode == HS_NINTENDO_64_HLE);
+  self->mode = mode;
 }
 
 static void
