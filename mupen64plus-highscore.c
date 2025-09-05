@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2023-2025 Alice Mikhaylenko <alicem@gnome.org>
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+
 #include "mupen64plus-highscore.h"
 
 #include <mupen64plus/m64p_common.h>
