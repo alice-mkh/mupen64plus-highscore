@@ -7,11 +7,11 @@ git clone https://github.com/highscore-emu/parallel-rdp
 git clone https://github.com/highscore-emu/parallel-rsp
 
 pushd parallel-rdp
-git remote add upstream https://github.com/Themaister/parallel-rdp
+git remote add upstream https://github.com/Themaister/parallel-rdp-standalone
 git fetch upstream
 popd
 
 pushd parallel-rsp
-git remote add upstream https://github.com/libretro/parallel-rsp-standalone
+git remote add upstream https://github.com/libretro/parallel-rsp
 git fetch upstream
 popd
