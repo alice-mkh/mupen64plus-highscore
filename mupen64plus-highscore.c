@@ -99,8 +99,6 @@ struct _Mupen64PlusCore
   // Lock video_mutex before accessing
   HsInterlacingMode interlacing;
   // Lock video_mutex before accessing
-  gboolean use_hle;
-  // Lock video_mutex before accessing
   gboolean pending_resize;
   // Lock video_mutex before accessing
   int pending_width;
@@ -293,9 +291,9 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
   // simpler than making frontend handle all of these, and as a separate
   // calls too, with no notification when the plugin is done setting them.
   int values[] = {
-    core->use_hle ? 1 : 0,  // M64P_GL_DOUBLEBUFFER
+    core->prefer_hle ? 1 : 0,  // M64P_GL_DOUBLEBUFFER
     32, // M64P_GL_BUFFER_SIZE
-    core->use_hle ? 16 : 0,  // M64P_GL_DEPTH_SIZE
+    core->prefer_hle ? 16 : 0,  // M64P_GL_DEPTH_SIZE
     8,  // M64P_GL_RED_SIZE
     8,  // M64P_GL_GREEN_SIZE
     8,  // M64P_GL_BLUE_SIZE
@@ -836,10 +834,8 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  self->use_hle = self->prefer_hle;
-
   self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR,
-                                    self->use_hle ? PLUGIN_VIDEO_GLIDEN64 : PLUGIN_VIDEO_PARALLEL, error);
+                                    self->prefer_hle ? PLUGIN_VIDEO_GLIDEN64 : PLUGIN_VIDEO_PARALLEL, error);
   if (!self->gfx_plugin)
     return FALSE;
 
@@ -852,7 +848,7 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
 
   self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR,
-                                    self->use_hle ? PLUGIN_RSP_HLE : PLUGIN_RSP_PARALLEL, error);
+                                    self->prefer_hle ? PLUGIN_RSP_HLE : PLUGIN_RSP_PARALLEL, error);
   if (!self->rsp_plugin)
     return FALSE;
 
@@ -914,25 +910,17 @@ mupen64plus_core_run_frame (HsCore *core)
   } else {
       self->interlacing = HS_INTERLACING_NONE;
   }
-  g_mutex_unlock (&self->video_mutex);
 
-  g_mutex_lock (&self->video_mutex);
-  if (self->use_hle && !self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
-    g_mutex_unlock (&self->video_mutex);
-
-    // GLideN64 doesn't resize itself for progressive/interlaced mode, so we do it manually
+  if (!self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
     int new_width = 640;
     int new_height = interlaced ? 480 : 240;
 
-    g_mutex_lock (&self->video_mutex);
     int old_width = self->width;
     int old_height = self->height;
-    g_mutex_unlock (&self->video_mutex);
 
     if (new_width != old_width || new_height != old_height) {
       int size = (new_width << 16) + new_height;
 
-      g_mutex_lock (&self->video_mutex);
       self->pending_resize = TRUE;
       self->pending_width = new_width;
       self->pending_height = new_height;
@@ -949,6 +937,8 @@ mupen64plus_core_run_frame (HsCore *core)
       ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &new_width);
       ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &new_height);
       ConfigSaveSection ("Video-General");
+    } else {
+      g_mutex_unlock (&self->video_mutex);
     }
   } else {
     g_mutex_unlock (&self->video_mutex);
