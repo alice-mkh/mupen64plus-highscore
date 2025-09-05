@@ -12,6 +12,6 @@ git fetch upstream
 popd
 
 pushd parallel-rsp
-git remote add upstream https://github.com/libretro/parallel-rsp
+git remote add upstream https://github.com/libretro/parallel-rsp-standalone
 git fetch upstream
 popd
