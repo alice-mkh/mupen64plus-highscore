@@ -45,7 +45,6 @@ typedef void (*hs_setup_audio_t) (HsCore *core, HsSampleRateChangedCallback samp
 typedef void (*hs_setup_input_t) (HsCore *core);
 typedef void (*hs_poll_input_t) (HsInputState *input_state);
 typedef void (*hs_set_controller_t) (guint player, gboolean present, HsNintendo64Pak pak);
-typedef bool (*parallel_rdp_is_supported_t) ();
 
 static hs_poll_input_t hs_poll_input;
 static hs_set_controller_t hs_set_controller;
@@ -109,6 +108,8 @@ struct _Mupen64PlusCore
   int pending_height;
 
   guint32 *vi_regs;
+
+  gboolean prefer_hle;
 };
 
 static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface);
@@ -786,7 +787,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigSetParameter (config, "AspectRatio", M64TYPE_INT, &value);
   value = 1;
   ConfigSetParameter (config, "UseNativeResolutionFactor", M64TYPE_INT, &value);
-  value = 1;
+  value = 0;
   ConfigSetParameter (config, "EnableDitheringPattern", M64TYPE_INT, &value);
   value = 0;
   ConfigSetParameter (config, "bilinearMode", M64TYPE_INT, &value);
@@ -835,38 +836,12 @@ mupen64plus_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  self->use_hle = !g_strcmp0 (g_getenv ("HIGHSCORE_M64P_PREFER_HLE"), "1");
+  self->use_hle = self->prefer_hle;
 
-  if (self->use_hle) {
-    hs_core_log_literal (self, HS_LOG_MESSAGE, "HIGHSCORE_M64P_PREFER_HLE=1 is set, using GLideN64 and HLE RSP");
-
-    self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
-    if (!self->gfx_plugin)
-      return FALSE;
-  } else {
-    self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_PARALLEL, error);
-    if (!self->gfx_plugin)
-      return FALSE;
-
-    parallel_rdp_is_supported_t parallel_rdp_is_supported = dlsym (self->gfx_plugin, "parallel_rdp_is_supported");
-
-    if (parallel_rdp_is_supported && !parallel_rdp_is_supported ()) {
-      hs_core_log_literal (self, HS_LOG_MESSAGE, "ParaLLEl-RDP is not compatible, falling back to GLideN64 and HLE RSP");
-
-      if (CoreDetachPlugin (M64PLUGIN_GFX) != M64ERR_SUCCESS) {
-        g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to detach ParaLLEl-RDP");
-        return FALSE;
-      }
-
-      dlclose (self->gfx_plugin);
-
-      self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR, PLUGIN_VIDEO_GLIDEN64, error);
-      if (!self->gfx_plugin)
-        return FALSE;
-
-      self->use_hle = TRUE;
-    }
-  }
+  self->gfx_plugin = attach_plugin (self, M64PLUGIN_GFX, PLUGINS_DIR,
+                                    self->use_hle ? PLUGIN_VIDEO_GLIDEN64 : PLUGIN_VIDEO_PARALLEL, error);
+  if (!self->gfx_plugin)
+    return FALSE;
 
   self->audio_plugin = attach_plugin (self, M64PLUGIN_AUDIO, CORE_DIR, "mupen64plus-audio-highscore.so", error);
   if (!self->audio_plugin)
@@ -876,11 +851,8 @@ mupen64plus_core_load_rom (HsCore      *core,
   if (!self->input_plugin)
     return FALSE;
 
-  if (self->use_hle)
-    self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_HLE, error);
-  else
-    self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR, PLUGIN_RSP_PARALLEL, error);
-
+  self->rsp_plugin = attach_plugin (self, M64PLUGIN_RSP, PLUGINS_DIR,
+                                    self->use_hle ? PLUGIN_RSP_HLE : PLUGIN_RSP_PARALLEL, error);
   if (!self->rsp_plugin)
     return FALSE;
 
@@ -1338,10 +1310,19 @@ mupen64plus_nintendo_64_core_set_controller (HsNintendo64Core *core, guint playe
 }
 
 static void
+mupen64plus_nintendo_64_core_set_emulation_mode (HsNintendo64Core *core, HsNintendo64EmulationMode mode)
+{
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
+  self->prefer_hle = (mode == HS_NINTENDO_64_HLE);
+}
+
+static void
 mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface)
 {
   iface->get_players = mupen64plus_nintendo_64_core_get_players;
   iface->set_controller = mupen64plus_nintendo_64_core_set_controller;
+  iface->set_emulation_mode = mupen64plus_nintendo_64_core_set_emulation_mode;
 }
 
 GType
