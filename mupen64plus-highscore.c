@@ -121,6 +121,31 @@ static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface)
 G_DEFINE_FINAL_TYPE_WITH_CODE (Mupen64PlusCore, mupen64plus_core, HS_TYPE_CORE,
                                G_IMPLEMENT_INTERFACE (HS_TYPE_NINTENDO_64_CORE, mupen64plus_nintendo_64_core_init))
 
+static m64p_system_type
+rom_country_code_to_system_type (uint16_t country_code)
+{
+  switch (country_code) {
+  // PAL codes
+  case 0x44:
+  case 0x46:
+  case 0x49:
+  case 0x50:
+  case 0x53:
+  case 0x55:
+  case 0x58:
+  case 0x59:
+    return SYSTEM_PAL;
+
+  // NTSC codes
+  case 0x37:
+  case 0x41:
+  case 0x45:
+  case 0x4a:
+  default: // Fallback for unknown codes
+    return SYSTEM_NTSC;
+  }
+}
+
 static void
 debug_callback (gpointer context, int level, const char *message)
 {
@@ -336,9 +361,12 @@ video_gl_swap_buf (void)
       core->pending_resize = FALSE;
     }
 
+    m64p_system_type system_type = rom_country_code_to_system_type (core->rom_header.Country_code);
+    int base_height = (system_type == SYSTEM_PAL) ? 288 : 240;
+
     hs_gl_context_set_overscan (core->context,
                                 &HS_BORDER_INIT (OVERSCAN_H * core->width / 640,
-                                                 OVERSCAN_V * core->height / 240));
+                                                 OVERSCAN_V * core->height / base_height));
     hs_gl_context_set_interlacing (core->context, core->interlacing);
     hs_gl_context_set_colorburst_phase (core->context, core->colorburst_phase);
     hs_gl_context_swap_buffers (core->context);
@@ -607,31 +635,6 @@ try_migrate_libretro_save (Mupen64PlusCore  *self,
   hs_core_log (HS_CORE (self), HS_LOG_MESSAGE, "Libretro save file migrated successfully. A backup has been made in %s", backup_path);
 
   return TRUE;
-}
-
-static m64p_system_type
-rom_country_code_to_system_type (uint16_t country_code)
-{
-  switch (country_code) {
-  // PAL codes
-  case 0x44:
-  case 0x46:
-  case 0x49:
-  case 0x50:
-  case 0x53:
-  case 0x55:
-  case 0x58:
-  case 0x59:
-    return SYSTEM_PAL;
-
-  // NTSC codes
-  case 0x37:
-  case 0x41:
-  case 0x45:
-  case 0x4a:
-  default: // Fallback for unknown codes
-    return SYSTEM_NTSC;
-  }
 }
 
 static m64p_dynlib_handle
@@ -928,7 +931,10 @@ mupen64plus_core_run_frame (HsCore *core)
 
   if (!self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
     int new_width = 640;
-    int new_height = interlaced ? 480 : 240;
+    int new_height = (system_type == SYSTEM_PAL) ? 288 : 240;
+
+    if (interlaced)
+      new_height *= 2.0;
 
     int old_width = self->width;
     int old_height = self->height;
@@ -1214,14 +1220,17 @@ mupen64plus_core_get_aspect_ratio (HsCore *core)
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
   m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
 
-  double par;
+  double par, height;
 
-  if (system_type == SYSTEM_NTSC)
+  if (system_type == SYSTEM_NTSC) {
     par = 120.0 / 119.0;
-  else
+    height = 240;
+  } else {
     par = 6.0 / 5.0;
+    height = 288;
+  }
 
-  return 4.0 / 3.0 * par;
+  return 320.0 / height * par;
 }
 
 static double
