@@ -969,8 +969,14 @@ mupen64plus_core_run_frame (HsCore *core)
                               &HS_BORDER_INIT (OVERSCAN_H * self->width / 640,
                                                OVERSCAN_V * self->height / 240));
 
-  if (self->interlacing != HS_INTERLACING_ODD_FIELD)
-    self->colorburst_phase ^= 1;
+  if (self->interlacing != HS_INTERLACING_ODD_FIELD) {
+    m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
+
+    if (system_type == SYSTEM_PAL)
+      self->colorburst_phase = (self->colorburst_phase + 1) % 4;
+    else
+      self->colorburst_phase ^= 1;
+  }
 
   g_mutex_unlock (&self->video_mutex);
 }
