@@ -17,6 +17,8 @@
 
 #define PAK_IO_RUMBLE       0xC000 // the address where rumble-commands are sent to
 
+#define STICK_DEADZONE 0.05
+
 static HsCore *core;
 // Lock input_mutex before accessing
 static CONTROL_INFO control_info;
@@ -250,6 +252,30 @@ const uint8_t PAD_BUTTON_OFFSETS[] = {
   0x04, // START_BUTTON
 };
 
+static double
+circle_to_octagon (double angle, double distance)
+{
+  // Our stick input is clipped to a circle, potentially clipped further by the
+  // physical stick's shape. We want to adjust it to match the shape N64 expects,
+  // e.g. 45° angles should be (64; 64) rather than (57; 57) - so (0.8, 0.8).
+
+  // Don't compute the exact shape since it will be approximate anyway depending
+  // on the gamepad; just approximate it so that the corners end up where expected.
+
+  if (angle < 0)
+    angle += G_PI * 2.0;
+
+  angle = fmod (angle, G_PI / 2.0);
+
+  if (angle > G_PI / 4.0)
+    angle = G_PI / 2.0 - angle;
+
+  double t = angle / (G_PI / 4.0);
+  double corner_distance = 0.8 * sqrt (2.0);
+
+  return distance * (1.0 + (corner_distance - 1.0) * t);
+}
+
 EXPORT void CALL
 hs_poll_input (HsInputState *input_state)
 {
@@ -268,8 +294,18 @@ hs_poll_input (HsInputState *input_state)
     double x = input_state->nintendo_64.pad_control_stick_x[player];
     double y = input_state->nintendo_64.pad_control_stick_y[player];
 
-    button_state[player].X_AXIS = (int8_t) round (x * 80);
-    button_state[player].Y_AXIS = (int8_t) round (y * -80); // Y axis is inverted compared to the API
+    double distance = sqrt (x * x + y * y);
+    double angle = atan2 (y, x);
+
+    if (distance > STICK_DEADZONE) {
+      distance = (distance - STICK_DEADZONE) / (1.0 - STICK_DEADZONE);
+      distance = circle_to_octagon (angle, distance);
+
+      button_state[player].X_AXIS = (int8_t) round (distance * cos (angle) * 80);
+      button_state[player].Y_AXIS = (int8_t) round (distance * sin (angle) * -80); // Y axis is inverted compared to the API
+    } else {
+      button_state[player].X_AXIS = button_state[player].Y_AXIS = 0;
+    }
   }
 
   g_mutex_unlock (&input_mutex);
