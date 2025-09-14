@@ -786,6 +786,10 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   ConfigSaveSection ("CoreEvents");
 
+  ConfigOpenSection ("Video-General", &config);
+  int width = ConfigGetParamInt (config, "ScreenWidth");
+  int height = ConfigGetParamInt (config, "ScreenHeight");
+
   ConfigDeleteSection ("Video-GLideN64");
   ConfigDeleteSection ("Video-Parallel");
 
@@ -808,6 +812,8 @@ mupen64plus_core_load_rom (HsCore      *core,
   value = 0;
   ConfigSetParameter (config, "CropOverscanV", M64TYPE_INT, &value);
   ConfigSetParameter (config, "CropOverscanH", M64TYPE_INT, &value);
+  ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &width);
+  ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &height);
   ConfigSaveSection ("Video-Parallel");
 
   // Set up video
