@@ -112,19 +112,14 @@ struct _Mupen64PlusCore
 
   HsNintendo64EmulationMode mode;
 
-  GAsyncQueue *frame_queue;
+  GCond frame_cond;
+  GMutex frame_mutex;
 };
 
 static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface);
 
 G_DEFINE_FINAL_TYPE_WITH_CODE (Mupen64PlusCore, mupen64plus_core, HS_TYPE_CORE,
                                G_IMPLEMENT_INTERFACE (HS_TYPE_NINTENDO_64_CORE, mupen64plus_nintendo_64_core_init))
-
-typedef struct {
-  int colorburst_phase;
-  HsInterlacingMode interlacing;
-  HsBorder overscan;
-} FrameData;
 
 static m64p_system_type
 rom_country_code_to_system_type (uint16_t country_code)
@@ -348,51 +343,25 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
 m64p_error
 video_gl_swap_buf (void)
 {
-  g_async_queue_lock (core->frame_queue);
-
-  FrameData *data = g_async_queue_timeout_pop_unlocked (core->frame_queue, 50000);
-
-  if (g_async_queue_length_unlocked (core->frame_queue) > 0) {
-    while (TRUE) {
-      FrameData *data2 = g_async_queue_try_pop_unlocked (core->frame_queue);
-      if (!data2)
-        break;
-
-      g_free (data);
-      data = data2;
-    }
-  }
-
-  g_async_queue_unlock (core->frame_queue);
-
-  if (!data)
-    return M64ERR_SUCCESS;
-
   g_mutex_lock (&core->savestate_mutex);
   gboolean is_loading = core->savestate_in_progress && core->savestate_load;
   g_mutex_unlock (&core->savestate_mutex);
 
   g_mutex_lock (&core->video_mutex);
 
-  // Occasionally we get black screen when pausing, we don't want that
-  if (!g_atomic_int_get (&core->paused) && !is_loading) {
-    if (core->pending_resize) {
-      hs_gl_context_set_size (core->context, core->pending_width, core->pending_height);
+  if (core->pending_resize) {
+    hs_gl_context_set_size (core->context, core->pending_width, core->pending_height);
 
-      core->width = core->pending_width;
-      core->height = core->pending_height;
-      core->pending_resize = FALSE;
-    }
-
-    hs_gl_context_set_overscan (core->context, &data->overscan);
-    hs_gl_context_set_interlacing (core->context, data->interlacing);
-    hs_gl_context_set_colorburst_phase (core->context, data->colorburst_phase);
-    hs_gl_context_swap_buffers (core->context);
+    core->width = core->pending_width;
+    core->height = core->pending_height;
+    core->pending_resize = FALSE;
   }
+
+  hs_gl_context_swap_buffers (core->context);
 
   g_mutex_unlock (&core->video_mutex);
 
-  g_free (data);
+  g_cond_signal (&core->frame_cond);
 
   return M64ERR_SUCCESS;
 }
@@ -908,7 +877,6 @@ mupen64plus_core_load_rom (HsCore      *core,
   hs_setup_input (core);
 
   self->vi_regs = DebugMemGetPointer (M64P_DBG_PTR_VI_REG);
-  self->frame_queue = g_async_queue_new ();
 
   return TRUE;
 }
@@ -985,29 +953,36 @@ mupen64plus_core_run_frame (HsCore *core)
     height = base_height;
   }
 
-  FrameData *data = g_new0 (FrameData, 1);
+  HsInterlacingMode interlacing;
 
   if (interlaced) {
     if (is_even)
-      data->interlacing = HS_INTERLACING_EVEN_FIELD;
+      interlacing = HS_INTERLACING_EVEN_FIELD;
     else
-      data->interlacing = HS_INTERLACING_ODD_FIELD;
+      interlacing = HS_INTERLACING_ODD_FIELD;
   } else {
-      data->interlacing = HS_INTERLACING_NONE;
+    interlacing = HS_INTERLACING_NONE;
   }
 
-  hs_border_init (&data->overscan, OVERSCAN_H * width / 640, OVERSCAN_V * height / base_height);
+  hs_gl_context_set_interlacing (self->context, interlacing);
 
-  data->colorburst_phase = self->next_colorburst_phase;
+  hs_gl_context_set_overscan (self->context,
+                              &HS_BORDER_INIT (OVERSCAN_H * width / 640,
+                                               OVERSCAN_V * height / base_height));
+
+  hs_gl_context_set_colorburst_phase (self->context, self->next_colorburst_phase);
+
+  g_mutex_unlock (&self->video_mutex);
 
   if (system_type == SYSTEM_PAL)
     self->next_colorburst_phase = (self->next_colorburst_phase + 1) % 4;
-  else if (data->interlacing != HS_INTERLACING_ODD_FIELD)
+  else if (interlacing != HS_INTERLACING_ODD_FIELD)
     self->next_colorburst_phase ^= 1;
 
-  g_async_queue_push (self->frame_queue, data);
-
-  g_mutex_unlock (&self->video_mutex);
+  // Wait until swap_buffers() so that we have a picture ready to go
+  g_mutex_lock (&self->frame_mutex);
+  g_cond_wait (&self->frame_cond, &self->frame_mutex);
+  g_mutex_unlock (&self->frame_mutex);
 
   if (g_atomic_int_get (&self->paused))
     CoreDoCommand (M64CMD_ADVANCE_FRAME, 0, NULL);
@@ -1055,8 +1030,6 @@ mupen64plus_core_stop (HsCore *core)
   g_clear_pointer (&self->audio_plugin, dlclose);
   g_clear_pointer (&self->input_plugin, dlclose);
   g_clear_pointer (&self->rsp_plugin,   dlclose);
-
-  g_clear_pointer (&self->frame_queue, g_async_queue_unref);
 }
 
 static void
