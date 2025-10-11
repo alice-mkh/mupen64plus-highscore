@@ -343,10 +343,6 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
 m64p_error
 video_gl_swap_buf (void)
 {
-  g_mutex_lock (&core->savestate_mutex);
-  gboolean is_loading = core->savestate_in_progress && core->savestate_load;
-  g_mutex_unlock (&core->savestate_mutex);
-
   g_mutex_lock (&core->video_mutex);
 
   if (core->pending_resize) {
