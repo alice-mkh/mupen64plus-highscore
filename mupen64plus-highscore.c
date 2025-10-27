@@ -951,7 +951,8 @@ mupen64plus_core_run_frame (HsCore *core)
 
   HsInterlacingMode interlacing;
 
-  if (interlaced) {
+  // GLideN64 always outputs progressive video
+  if (interlaced && self->mode == HS_NINTENDO_64_LLE) {
     if (is_even)
       interlacing = HS_INTERLACING_EVEN_FIELD;
     else
