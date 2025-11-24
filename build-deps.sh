@@ -30,6 +30,6 @@ popd
 
 pushd parallel-rdp
 meson setup build --prefix=/usr --optimization=2
-ninja -C build
-sudo ninja -C build install
+meson compile -C build
+sudo meson install -C build
 popd
