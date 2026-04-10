@@ -31,6 +31,8 @@
 #define VI_CURRENT_LINE_REG 4
 #define VI_SERRATE_FLAG (1 << 6)
 
+#define N_GL_ATTRS M64P_GL_CONTEXT_PROFILE_MASK
+
 static ptr_CoreStartup             CoreStartup;
 static ptr_CoreShutdown            CoreShutdown;
 static ptr_CoreDoCommand           CoreDoCommand;
@@ -96,6 +98,8 @@ struct _Mupen64PlusCore
   gboolean should_pause_again;
   GMutex savestate_mutex;
 
+  // Lock video_mutex before accessing
+  int gl_attrs[N_GL_ATTRS];
   // Lock video_mutex before accessing
   int width;
   // Lock video_mutex before accessing
@@ -236,17 +240,12 @@ sample_rate_cb (HsCore *core, double sample_rate)
 m64p_error
 video_init (void)
 {
-  g_autoptr (GError) error = NULL;
+  int i;
 
   g_mutex_lock (&core->video_mutex);
 
-  if (!hs_gl_context_realize (core->context, &error)) {
-    hs_core_log (core, HS_LOG_CRITICAL, "Failed to realize GL context: %s", error->message);
-
-    g_mutex_unlock (&core->video_mutex);
-
-    return M64ERR_SYSTEM_FAIL;
-  }
+  for (i = 0; i < N_GL_ATTRS; i++)
+    core->gl_attrs[i] = 0;
 
   g_mutex_unlock (&core->video_mutex);
 
@@ -280,6 +279,32 @@ m64p_error
 video_set_mode (int width, int height, int bpp, int mode, int flags)
 {
   g_mutex_lock (&core->video_mutex);
+
+  if (!core->context) {
+    int major = core->gl_attrs[M64P_GL_CONTEXT_MAJOR_VERSION - 1];
+    int minor = core->gl_attrs[M64P_GL_CONTEXT_MINOR_VERSION - 1];
+    gboolean is_gles = core->gl_attrs[M64P_GL_CONTEXT_PROFILE_MASK - 1] == M64P_GL_CONTEXT_PROFILE_ES;
+
+    HsGLFlags flags = HS_GL_FLAGS_FLIPPED;
+
+    if (core->gl_attrs[M64P_GL_DEPTH_SIZE - 1] > 0)
+      flags |= HS_GL_FLAGS_DEPTH;
+
+    core->context = hs_core_create_gl_context (HS_CORE (core),
+                                               is_gles ? HS_GL_API_GLES : HS_GL_API_GL,
+                                               major, minor, flags);
+
+    g_autoptr (GError) error = NULL;
+
+    if (!hs_gl_context_realize (core->context, &error)) {
+      hs_core_log (core, HS_LOG_CRITICAL, "Failed to realize GL context: %s", error->message);
+
+      g_mutex_unlock (&core->video_mutex);
+
+      return M64ERR_SYSTEM_FAIL;
+    }
+  }
+
   hs_gl_context_set_size (core->context, width, height);
   core->width = width;
   core->height = height;
@@ -309,33 +334,23 @@ video_gl_get_proc (const char *name)
 m64p_error
 video_gl_set_attr (m64p_GLattr attr, int value)
 {
+  g_assert (attr <= N_GL_ATTRS);
+
+  g_mutex_lock (&core->video_mutex);
+  core->gl_attrs[attr - 1] = value;
+  g_mutex_unlock (&core->video_mutex);
+
   return M64ERR_SUCCESS;
 }
 
 m64p_error
 video_gl_get_attr (m64p_GLattr attr, int *value)
 {
-  // Just hardcode GLideN64's and ParaLLEl-RDP values. If we switch to
-  // another plugin in future, we'll just update these, but it's much
-  // simpler than making frontend handle all of these, and as a separate
-  // calls too, with no notification when the plugin is done setting them.
-  int values[] = {
-    (core->mode == HS_NINTENDO_64_HLE) ? 1 : 0,  // M64P_GL_DOUBLEBUFFER
-    32, // M64P_GL_BUFFER_SIZE
-    (core->mode == HS_NINTENDO_64_HLE) ? 16 : 0,  // M64P_GL_DEPTH_SIZE
-    8,  // M64P_GL_RED_SIZE
-    8,  // M64P_GL_GREEN_SIZE
-    8,  // M64P_GL_BLUE_SIZE
-    8,  // M64P_GL_ALPHA_SIZE
-    0,  // M64P_GL_SWAP_CONTROL
-    0,  // M64P_GL_MULTISAMPLEBUFFERS
-    0,  // M64P_GL_MULTISAMPLESAMPLES
-    3,  // M64P_GL_CONTEXT_MAJOR_VERSION
-    3,  // M64P_GL_CONTEXT_MINOR_VERSION
-    M64P_GL_CONTEXT_PROFILE_CORE,
-  };
+  g_assert (attr <= N_GL_ATTRS);
 
-  *value = values[attr - 1];
+  g_mutex_lock (&core->video_mutex);
+  *value = core->gl_attrs[attr - 1];
+  g_mutex_unlock (&core->video_mutex);
 
   return M64ERR_SUCCESS;
 }
@@ -801,11 +816,6 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigSaveSection ("Video-Parallel");
 
   // Set up video
-  self->context = hs_core_create_gl_context (core,
-                                             HS_GL_API_GL,
-                                             3, 3,
-                                             HS_GL_FLAGS_DEPTH | HS_GL_FLAGS_FLIPPED);
-
   m64p_video_extension_functions override = {
     17, // The number of functions below
     video_init,
