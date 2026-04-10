@@ -43,6 +43,7 @@ static ptr_ConfigOpenSection       ConfigOpenSection;
 static ptr_ConfigSaveSection       ConfigSaveSection;
 static ptr_ConfigDeleteSection     ConfigDeleteSection;
 static ptr_ConfigGetParamInt       ConfigGetParamInt;
+static ptr_ConfigGetParameterType  ConfigGetParameterType;
 static ptr_ConfigSetParameter      ConfigSetParameter;
 static ptr_ConfigOverrideUserPaths ConfigOverrideUserPaths;
 static ptr_DebugMemGetPointer      DebugMemGetPointer;
@@ -696,6 +697,14 @@ attach_plugin (Mupen64PlusCore   *self,
 }
 
 static gboolean
+has_setting (m64p_handle section, const char *name)
+{
+  m64p_type *type;
+
+  return ConfigGetParameterType (section, name, &type) == M64ERR_SUCCESS;
+}
+
+static gboolean
 mupen64plus_core_load_rom (HsCore      *core,
                            const char **rom_paths,
                            int          n_rom_paths,
@@ -731,6 +740,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigSaveSection       = dlsym (self->core_handle, "ConfigSaveSection");
   ConfigDeleteSection     = dlsym (self->core_handle, "ConfigDeleteSection");
   ConfigGetParamInt       = dlsym (self->core_handle, "ConfigGetParamInt");
+  ConfigGetParameterType  = dlsym (self->core_handle, "ConfigGetParameterType");
   ConfigSetParameter      = dlsym (self->core_handle, "ConfigSetParameter");
   ConfigOverrideUserPaths = dlsym (self->core_handle, "ConfigOverrideUserPaths");
   DebugMemGetPointer      = dlsym (self->core_handle, "DebugMemGetPointer");
@@ -785,9 +795,14 @@ mupen64plus_core_load_rom (HsCore      *core,
 
   ConfigSaveSection ("CoreEvents");
 
+  int width = -1, height = -1;
+
   ConfigOpenSection ("Video-General", &config);
-  int width = ConfigGetParamInt (config, "ScreenWidth");
-  int height = ConfigGetParamInt (config, "ScreenHeight");
+
+  if (has_setting (config, "ScreenWidth"))
+    width = ConfigGetParamInt (config, "ScreenWidth");
+  if (has_setting (config, "ScreenHeight"))
+    height = ConfigGetParamInt (config, "ScreenHeight");
 
   ConfigDeleteSection ("Video-GLideN64");
   ConfigDeleteSection ("Video-Parallel");
@@ -811,8 +826,12 @@ mupen64plus_core_load_rom (HsCore      *core,
   value = 0;
   ConfigSetParameter (config, "CropOverscanV", M64TYPE_INT, &value);
   ConfigSetParameter (config, "CropOverscanH", M64TYPE_INT, &value);
-  ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &width);
-  ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &height);
+
+  if (width >= 0)
+    ConfigSetParameter (config, "ScreenWidth", M64TYPE_INT, &width);
+  if (height >= 0)
+    ConfigSetParameter (config, "ScreenHeight", M64TYPE_INT, &height);
+
   ConfigSaveSection ("Video-Parallel");
 
   // Set up video
