@@ -97,6 +97,8 @@ struct _Mupen64PlusCore
 
   // Lock video_mutex before accessing
   int gl_attrs[N_GL_ATTRS];
+  gboolean realized;
+  gboolean attrs_changed;
   int width;
   int height;
   gboolean pending_resize;
@@ -250,6 +252,7 @@ video_quit (void)
 {
   g_mutex_lock (&core->video_mutex);
   hs_gl_context_unrealize (core->context);
+  core->realized = FALSE;
   g_mutex_unlock (&core->video_mutex);
 
   return M64ERR_SUCCESS;
@@ -273,6 +276,11 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
 {
   g_mutex_lock (&core->video_mutex);
 
+  if (core->attrs_changed) {
+    g_clear_object (&core->context);
+    core->attrs_changed = FALSE;
+  }
+
   if (!core->context) {
     int major = core->gl_attrs[M64P_GL_CONTEXT_MAJOR_VERSION - 1];
     int minor = core->gl_attrs[M64P_GL_CONTEXT_MINOR_VERSION - 1];
@@ -287,6 +295,10 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
                                                is_gles ? HS_GL_API_GLES : HS_GL_API_GL,
                                                major, minor, flags);
 
+    core->realized = FALSE;
+  }
+
+  if (!core->realized) {
     g_autoptr (GError) error = NULL;
 
     if (!hs_gl_context_realize (core->context, &error)) {
@@ -296,6 +308,8 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
 
       return M64ERR_SYSTEM_FAIL;
     }
+
+    core->realized = TRUE;
   }
 
   hs_gl_context_set_size (core->context, width, height);
@@ -330,7 +344,12 @@ video_gl_set_attr (m64p_GLattr attr, int value)
   g_assert (attr <= N_GL_ATTRS);
 
   g_mutex_lock (&core->video_mutex);
-  core->gl_attrs[attr - 1] = value;
+
+  if (core->gl_attrs[attr - 1] != value) {
+    core->gl_attrs[attr - 1] = value;
+    core->attrs_changed = TRUE;
+  }
+
   g_mutex_unlock (&core->video_mutex);
 
   return M64ERR_SUCCESS;
