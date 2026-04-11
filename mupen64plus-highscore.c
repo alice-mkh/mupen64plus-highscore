@@ -67,7 +67,6 @@ struct _Mupen64PlusCore
   // Lock video_mutex before accessing
   HsGLContext *context;
   GThread *emulation_thread;
-  GMutex *video_mutex;
 
   AUDIO_INFO audio_info;
   double sample_rate;
@@ -87,30 +86,23 @@ struct _Mupen64PlusCore
   // Access only with g_atomic_int_*()
   gboolean paused;
 
-  // Lock savestate_mutex before accessing
-  gboolean savestate_in_progress;
+  GMutex savestate_mutex;
+
   // Lock savestate_mutex before accessing
   HsStateCallback savestate_callback;
-  // Lock savestate_mutex before accessing
   gboolean savestate_load;
-  // Lock savestate_mutex before accessing
   int savestate_result;
-  // Lock savestate_mutex before accessing
   gboolean should_pause_again;
-  GMutex savestate_mutex;
+  gboolean savestate_in_progress;
 
   // Lock video_mutex before accessing
   int gl_attrs[N_GL_ATTRS];
-  // Lock video_mutex before accessing
   int width;
-  // Lock video_mutex before accessing
   int height;
-  // Lock video_mutex before accessing
   gboolean pending_resize;
-  // Lock video_mutex before accessing
   int pending_width;
-  // Lock video_mutex before accessing
   int pending_height;
+  GMutex *video_mutex;
 
   guint32 *vi_regs;
   int next_colorburst_phase;
