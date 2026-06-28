@@ -185,9 +185,10 @@ finish_savestate_cb (Mupen64PlusCore *self)
   int result = self->savestate_result;
 
   if (result) {
-    self->savestate_callback (HS_CORE (self), NULL);
     if (self->savestate_load)
-      self->next_colorburst_phase = 0;
+      self->next_colorburst_phase = hs_core_get_colorburst_phase (HS_CORE (self));
+
+    self->savestate_callback (HS_CORE (self), NULL);
   } else {
     GError *error = NULL;
 
