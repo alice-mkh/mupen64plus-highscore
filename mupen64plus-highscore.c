@@ -186,6 +186,8 @@ finish_savestate_cb (Mupen64PlusCore *self)
 
   if (result) {
     self->savestate_callback (HS_CORE (self), NULL);
+    if (self->savestate_load)
+      self->next_colorburst_phase = 0;
   } else {
     GError *error = NULL;
 
@@ -1028,10 +1030,15 @@ mupen64plus_core_run_frame (HsCore *core)
 static gboolean
 mupen64plus_core_reset (HsCore *core, gboolean hard, GError **error)
 {
+  Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
   if (CoreDoCommand (M64CMD_RESET, hard, NULL) != M64ERR_SUCCESS) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to reset game");
     return FALSE;
   }
+
+  if (hard)
+    self->next_colorburst_phase = 0;
 
   return TRUE;
 }
