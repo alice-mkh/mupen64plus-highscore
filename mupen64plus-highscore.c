@@ -1271,12 +1271,12 @@ mupen64plus_core_get_aspect_ratio (HsCore *core)
 
   double par, height;
 
-  if (system_type == SYSTEM_NTSC) {
-    par = 120.0 / 119.0;
-    height = 240;
-  } else {
+  if (system_type == SYSTEM_PAL) {
     par = 6.0 / 5.0;
     height = 288;
+  } else {
+    par = 120.0 / 119.0;
+    height = 240;
   }
 
   return 320.0 / height * par;
