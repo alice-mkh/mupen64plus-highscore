@@ -107,7 +107,7 @@ struct _Mupen64PlusCore
   GMutex *video_mutex;
 
   guint32 *vi_regs;
-  int next_colorburst_phase;
+  float next_colorburst_offset;
 
   HsNintendo64EmulationMode mode;
 
@@ -186,7 +186,7 @@ finish_savestate_cb (Mupen64PlusCore *self)
 
   if (result) {
     if (self->savestate_load)
-      self->next_colorburst_phase = hs_core_get_colorburst_phase (HS_CORE (self));
+      self->next_colorburst_offset = hs_core_get_colorburst_offset (HS_CORE (self));
 
     self->savestate_callback (HS_CORE (self), NULL);
   } else {
@@ -1010,14 +1010,36 @@ mupen64plus_core_run_frame (HsCore *core)
                               &HS_BORDER_INIT (OVERSCAN_H * width / 640,
                                                OVERSCAN_V * height / base_height));
 
-  hs_gl_context_set_colorburst_phase (self->context, self->next_colorburst_phase);
+  if (system_type == SYSTEM_PAL) {
+    hs_gl_context_set_colorburst (self->context, 1.5 * width / 320.0, 0.7516, self->next_colorburst_offset);
+
+    if (interlacing != HS_INTERLACING_ODD_FIELD) {
+      self->next_colorburst_offset += 0.2508;
+
+      if (self->next_colorburst_offset > 2499.9)
+       self->next_colorburst_offset = 0;
+    }
+  } else if (system_type == SYSTEM_MPAL) {
+    hs_gl_context_set_colorburst (self->context, 1.875 * width / 320.0, 0.25, self->next_colorburst_offset);
+
+    if (interlacing != HS_INTERLACING_ODD_FIELD) {
+      self->next_colorburst_offset += 0.25;
+
+      if (self->next_colorburst_offset > 0.9)
+       self->next_colorburst_offset = 0;
+    }
+  } else {
+    hs_gl_context_set_colorburst (self->context, 1.875 * width / 320.0, 0.5, self->next_colorburst_offset);
+
+    if (interlacing != HS_INTERLACING_ODD_FIELD) {
+      self->next_colorburst_offset += 0.5;
+
+      if (self->next_colorburst_offset > 0.9)
+       self->next_colorburst_offset = 0;
+    }
+  }
 
   g_mutex_unlock (&self->video_mutex);
-
-  if (system_type == SYSTEM_PAL)
-    self->next_colorburst_phase = (self->next_colorburst_phase + 1) % 4;
-  else if (interlacing != HS_INTERLACING_ODD_FIELD)
-    self->next_colorburst_phase ^= 1;
 
   // Wait until swap_buffers() so that we have a picture ready to go
   g_mutex_lock (&self->frame_mutex);
@@ -1039,7 +1061,7 @@ mupen64plus_core_reset (HsCore *core, gboolean hard, GError **error)
   }
 
   if (hard)
-    self->next_colorburst_phase = 0;
+    self->next_colorburst_offset = 0;
 
   return TRUE;
 }
