@@ -835,7 +835,7 @@ mupen64plus_core_load_rom (HsCore      *core,
   ConfigSaveSection ("Video-GLideN64");
 
   ConfigOpenSection ("Video-Parallel", &config);
-  value = 1;
+  value = 0;
   ConfigSetParameter (config, "DeinterlaceMode", M64TYPE_INT, &value);
   value = 0;
   ConfigSetParameter (config, "CropOverscanV", M64TYPE_INT, &value);
@@ -963,7 +963,7 @@ mupen64plus_core_run_frame (HsCore *core)
     int new_width = 640;
     int new_height = base_height;
 
-    if (interlaced)
+    if (interlaced && self->mode == HS_NINTENDO_64_HLE)
       new_height *= 2.0;
 
     if (new_width != width || new_height != height) {
