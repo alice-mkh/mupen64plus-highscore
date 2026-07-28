@@ -1324,6 +1324,12 @@ mupen64plus_core_get_region (HsCore *core)
     return HS_REGION_PAL;
 }
 
+static gboolean
+mupen64plus_core_has_internal_frame_clock (HsCore *core)
+{
+  return TRUE;
+}
+
 static void
 mupen64plus_core_finalize (GObject *object)
 {
@@ -1365,6 +1371,8 @@ mupen64plus_core_class_init (Mupen64PlusCoreClass *klass)
   core_class->get_sample_rate = mupen64plus_core_get_sample_rate;
 
   core_class->get_region = mupen64plus_core_get_region;
+
+  core_class->has_internal_frame_clock = mupen64plus_core_has_internal_frame_clock;
 }
 
 static void
