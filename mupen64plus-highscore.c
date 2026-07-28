@@ -110,6 +110,7 @@ struct _Mupen64PlusCore
   float next_colorburst_offset;
 
   HsNintendo64EmulationMode mode;
+  HsInterlacingMode interlacing;
 
   GCond frame_cond;
   GMutex frame_mutex;
@@ -381,6 +382,19 @@ video_gl_swap_buf (void)
     core->width = core->pending_width;
     core->height = core->pending_height;
     core->pending_resize = FALSE;
+  }
+
+  gboolean interlaced = core->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG;
+  gboolean is_odd = (core->vi_regs[VI_CURRENT_LINE_REG] & 1) > 0;
+
+  // GLideN64 always outputs progressive video
+  if (interlaced && core->mode == HS_NINTENDO_64_LLE) {
+    if (is_odd)
+      core->interlacing = HS_INTERLACING_ODD_FIELD;
+    else
+      core->interlacing = HS_INTERLACING_EVEN_FIELD;
+  } else {
+    core->interlacing = HS_INTERLACING_NONE;
   }
 
   hs_gl_context_swap_buffers (core->context);
@@ -950,10 +964,8 @@ mupen64plus_core_run_frame (HsCore *core)
 
   g_mutex_unlock (&self->audio_mutex);
 
-  gboolean interlaced = self->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG;
-  gboolean is_even = self->vi_regs[VI_CURRENT_LINE_REG] > 0;
-
   g_mutex_lock (&self->video_mutex);
+
   int width = self->width;
   int height = self->height;
 
@@ -963,7 +975,7 @@ mupen64plus_core_run_frame (HsCore *core)
     int new_width = 640;
     int new_height = base_height;
 
-    if (interlaced && self->mode == HS_NINTENDO_64_HLE)
+    if (self->mode == HS_NINTENDO_64_HLE && self->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG)
       new_height *= 2.0;
 
     if (new_width != width || new_height != height) {
@@ -992,28 +1004,25 @@ mupen64plus_core_run_frame (HsCore *core)
     height = base_height;
   }
 
-  HsInterlacingMode interlacing;
+  g_mutex_unlock (&self->video_mutex);
 
-  // GLideN64 always outputs progressive video
-  if (interlaced && self->mode == HS_NINTENDO_64_LLE) {
-    if (is_even)
-      interlacing = HS_INTERLACING_EVEN_FIELD;
-    else
-      interlacing = HS_INTERLACING_ODD_FIELD;
-  } else {
-    interlacing = HS_INTERLACING_NONE;
-  }
+  // Wait until swap_buffers() so that we have a picture ready to go
+  g_mutex_lock (&self->frame_mutex);
+  g_cond_wait (&self->frame_cond, &self->frame_mutex);
+  g_mutex_unlock (&self->frame_mutex);
 
-  hs_gl_context_set_interlacing (self->context, interlacing);
+  g_mutex_lock (&self->video_mutex);
 
   hs_gl_context_set_overscan (self->context,
                               &HS_BORDER_INIT (OVERSCAN_H * width / 640,
                                                OVERSCAN_V * height / base_height));
 
+  hs_gl_context_set_interlacing (self->context, self->interlacing);
+
   if (system_type == SYSTEM_PAL) {
     hs_gl_context_set_colorburst (self->context, 1.5 * width / 320.0, 0.7516, self->next_colorburst_offset);
 
-    if (interlacing != HS_INTERLACING_ODD_FIELD) {
+    if (self->interlacing != HS_INTERLACING_ODD_FIELD) {
       self->next_colorburst_offset += 0.2508;
 
       if (self->next_colorburst_offset > 2499.9)
@@ -1022,7 +1031,7 @@ mupen64plus_core_run_frame (HsCore *core)
   } else if (system_type == SYSTEM_MPAL) {
     hs_gl_context_set_colorburst (self->context, 1.875 * width / 320.0, 0.25, self->next_colorburst_offset);
 
-    if (interlacing != HS_INTERLACING_ODD_FIELD) {
+    if (self->interlacing != HS_INTERLACING_ODD_FIELD) {
       self->next_colorburst_offset += 0.25;
 
       if (self->next_colorburst_offset > 0.9)
@@ -1031,7 +1040,7 @@ mupen64plus_core_run_frame (HsCore *core)
   } else {
     hs_gl_context_set_colorburst (self->context, 1.875 * width / 320.0, 0.5, self->next_colorburst_offset);
 
-    if (interlacing != HS_INTERLACING_ODD_FIELD) {
+    if (self->interlacing != HS_INTERLACING_ODD_FIELD) {
       self->next_colorburst_offset += 0.5;
 
       if (self->next_colorburst_offset > 0.9)
@@ -1040,11 +1049,6 @@ mupen64plus_core_run_frame (HsCore *core)
   }
 
   g_mutex_unlock (&self->video_mutex);
-
-  // Wait until swap_buffers() so that we have a picture ready to go
-  g_mutex_lock (&self->frame_mutex);
-  g_cond_wait (&self->frame_cond, &self->frame_mutex);
-  g_mutex_unlock (&self->frame_mutex);
 
   if (g_atomic_int_get (&self->paused))
     CoreDoCommand (M64CMD_ADVANCE_FRAME, 0, NULL);
