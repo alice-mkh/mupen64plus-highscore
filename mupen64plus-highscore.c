@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <GL/glcorearb.h>
+
 #define PLUGIN_VIDEO_GLIDEN64 "mupen64plus-video-GLideN64.so"
 #define PLUGIN_VIDEO_PARALLEL "mupen64plus-video-parallel.so"
 #define PLUGIN_RSP_HLE        "mupen64plus-rsp-hle.so"
@@ -48,6 +50,50 @@ static ptr_ConfigSetParameter      ConfigSetParameter;
 static ptr_ConfigOverrideUserPaths ConfigOverrideUserPaths;
 static ptr_DebugMemGetPointer      DebugMemGetPointer;
 static ptr_PluginGetVersion        PluginGetVersion;
+
+static PFNGLACTIVETEXTUREPROC           glActiveTexture;
+static PFNGLATTACHSHADERPROC            glAttachShader;
+static PFNGLBINDBUFFERPROC              glBindBuffer;
+static PFNGLBINDFRAMEBUFFERPROC         glBindFramebuffer;
+static PFNGLBINDRENDERBUFFERPROC        glBindRenderbuffer;
+static PFNGLBINDTEXTUREPROC             glBindTexture;
+static PFNGLBINDVERTEXARRAYPROC         glBindVertexArray;
+static PFNGLBUFFERDATAPROC              glBufferData;
+static PFNGLCHECKFRAMEBUFFERSTATUSPROC  glCheckFramebufferStatus;
+static PFNGLCLEARPROC                   glClear;
+static PFNGLCLEARCOLORPROC              glClearColor;
+static PFNGLCOMPILESHADERPROC           glCompileShader;
+static PFNGLCREATESHADERPROC            glCreateShader;
+static PFNGLCREATEPROGRAMPROC           glCreateProgram;
+static PFNGLDELETEBUFFERSPROC           glDeleteBuffers;
+static PFNGLDELETEFRAMEBUFFERSPROC      glDeleteFramebuffers;
+static PFNGLDELETEPROGRAMPROC           glDeleteProgram;
+static PFNGLDELETERENDERBUFFERSPROC     glDeleteRenderbuffers;
+static PFNGLDELETESHADERPROC            glDeleteShader;
+static PFNGLDELETETEXTURESPROC          glDeleteTextures;
+static PFNGLDELETEVERTEXARRAYSPROC      glDeleteVertexArrays;
+static PFNGLDRAWELEMENTSPROC            glDrawElements;
+static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray;
+static PFNGLFRAMEBUFFERTEXTURE2DPROC    glFramebufferTexture2D;
+static PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer;
+static PFNGLGENBUFFERSPROC              glGenBuffers;
+static PFNGLGENFRAMEBUFFERSPROC         glGenFramebuffers;
+static PFNGLGENRENDERBUFFERSPROC        glGenRenderbuffers;
+static PFNGLGENTEXTURESPROC             glGenTextures;
+static PFNGLGETINTEGERVPROC             glGetIntegerv;
+static PFNGLGENVERTEXARRAYSPROC         glGenVertexArrays;
+static PFNGLGETPROGRAMIVPROC            glGetProgramiv;
+static PFNGLGETPROGRAMINFOLOGPROC       glGetProgramInfoLog;
+static PFNGLGETSHADERIVPROC             glGetShaderiv;
+static PFNGLGETSHADERINFOLOGPROC        glGetShaderInfoLog;
+static PFNGLLINKPROGRAMPROC             glLinkProgram;
+static PFNGLRENDERBUFFERSTORAGEPROC     glRenderbufferStorage;
+static PFNGLSHADERSOURCEPROC            glShaderSource;
+static PFNGLTEXIMAGE2DPROC              glTexImage2D;
+static PFNGLTEXPARAMETERIPROC           glTexParameteri;
+static PFNGLUSEPROGRAMPROC              glUseProgram;
+static PFNGLVERTEXATTRIBPOINTERPROC     glVertexAttribPointer;
+static PFNGLVIEWPORTPROC                glViewport;
 
 typedef void (*HsSampleRateChangedCallback) (HsCore *core, double sample_rate);
 typedef void (*hs_setup_audio_t) (HsCore *core, HsSampleRateChangedCallback sample_rate_cb);
@@ -114,6 +160,11 @@ struct _Mupen64PlusCore
 
   GCond frame_cond;
   GMutex frame_mutex;
+
+  // Only access from the emulator thread
+  GLuint vao, vbo, ebo;
+  GLuint fbo, texture, renderbuffer;
+  GLuint program;
 };
 
 static void mupen64plus_nintendo_64_core_init (HsNintendo64CoreInterface *iface);
@@ -236,6 +287,253 @@ sample_rate_cb (HsCore *core, double sample_rate)
   g_mutex_unlock (&self->audio_mutex);
 }
 
+m64p_function video_gl_get_proc (const char *name);
+
+static void
+fetch_gl_functions (void)
+{
+  glActiveTexture           = hs_gl_context_get_proc_address (core->context, "glActiveTexture");
+  glAttachShader            = hs_gl_context_get_proc_address (core->context, "glAttachShader");
+  glBindBuffer              = hs_gl_context_get_proc_address (core->context, "glBindBuffer");
+  glBindFramebuffer         = hs_gl_context_get_proc_address (core->context, "glBindFramebuffer");
+  glBindRenderbuffer        = hs_gl_context_get_proc_address (core->context, "glBindRenderbuffer");
+  glBindTexture             = hs_gl_context_get_proc_address (core->context, "glBindTexture");
+  glBindVertexArray         = hs_gl_context_get_proc_address (core->context, "glBindVertexArray");
+  glBufferData              = hs_gl_context_get_proc_address (core->context, "glBufferData");
+  glCheckFramebufferStatus  = hs_gl_context_get_proc_address (core->context, "glCheckFramebufferStatus");
+  glClear                   = hs_gl_context_get_proc_address (core->context, "glClear");
+  glClearColor              = hs_gl_context_get_proc_address (core->context, "glClearColor");
+  glCompileShader           = hs_gl_context_get_proc_address (core->context, "glCompileShader");
+  glCreateProgram           = hs_gl_context_get_proc_address (core->context, "glCreateProgram");
+  glCreateShader            = hs_gl_context_get_proc_address (core->context, "glCreateShader");
+  glDeleteBuffers           = hs_gl_context_get_proc_address (core->context, "glDeleteBuffers");
+  glDeleteFramebuffers      = hs_gl_context_get_proc_address (core->context, "glDeleteFramebuffers");
+  glDeleteProgram           = hs_gl_context_get_proc_address (core->context, "glDeleteProgram");
+  glDeleteRenderbuffers     = hs_gl_context_get_proc_address (core->context, "glDeleteRenderbuffers");
+  glDeleteShader            = hs_gl_context_get_proc_address (core->context, "glDeleteShader");
+  glDeleteTextures          = hs_gl_context_get_proc_address (core->context, "glDeleteTextures");
+  glDeleteVertexArrays      = hs_gl_context_get_proc_address (core->context, "glDeleteVertexArrays");
+  glDrawElements            = hs_gl_context_get_proc_address (core->context, "glDrawElements");
+  glEnableVertexAttribArray = hs_gl_context_get_proc_address (core->context, "glEnableVertexAttribArray");
+  glFramebufferTexture2D    = hs_gl_context_get_proc_address (core->context, "glFramebufferTexture2D");
+  glFramebufferRenderbuffer = hs_gl_context_get_proc_address (core->context, "glFramebufferRenderbuffer");
+  glGenBuffers              = hs_gl_context_get_proc_address (core->context, "glGenBuffers");
+  glGenFramebuffers         = hs_gl_context_get_proc_address (core->context, "glGenFramebuffers");
+  glGenRenderbuffers        = hs_gl_context_get_proc_address (core->context, "glGenRenderbuffers");
+  glGenTextures             = hs_gl_context_get_proc_address (core->context, "glGenTextures");
+  glGenVertexArrays         = hs_gl_context_get_proc_address (core->context, "glGenVertexArrays");
+  glGetIntegerv             = hs_gl_context_get_proc_address (core->context, "glGetIntegerv");
+  glGetProgramiv            = hs_gl_context_get_proc_address (core->context, "glGetProgramiv");
+  glGetProgramInfoLog       = hs_gl_context_get_proc_address (core->context, "glGetProgramInfoLog");
+  glGetShaderiv             = hs_gl_context_get_proc_address (core->context, "glGetShaderiv");
+  glGetShaderInfoLog        = hs_gl_context_get_proc_address (core->context, "glGetShaderInfoLog");
+  glLinkProgram             = hs_gl_context_get_proc_address (core->context, "glLinkProgram");
+  glRenderbufferStorage     = hs_gl_context_get_proc_address (core->context, "glRenderbufferStorage");
+  glShaderSource            = hs_gl_context_get_proc_address (core->context, "glShaderSource");
+  glTexImage2D              = hs_gl_context_get_proc_address (core->context, "glTexImage2D");
+  glTexParameteri           = hs_gl_context_get_proc_address (core->context, "glTexParameteri");
+  glUseProgram              = hs_gl_context_get_proc_address (core->context, "glUseProgram");
+  glVertexAttribPointer     = hs_gl_context_get_proc_address (core->context, "glVertexAttribPointer");
+  glViewport                = hs_gl_context_get_proc_address (core->context, "glViewport");
+}
+
+static void
+gl_resize (Mupen64PlusCore *self, int width, int height)
+{
+  GLenum status;
+
+  glBindFramebuffer (GL_FRAMEBUFFER, self->fbo);
+
+  if (self->texture > 0)
+    glDeleteTextures (1, &self->texture);
+
+  if (self->renderbuffer > 0)
+    glDeleteRenderbuffers (1, &self->renderbuffer);
+
+  glGenTextures (1, &self->texture);
+  glBindTexture (GL_TEXTURE_2D, self->texture);
+
+  glTexImage2D (GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+  glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self->texture, 0);
+
+  if (core->gl_attrs[M64P_GL_DEPTH_SIZE - 1] > 0) {
+    glGenRenderbuffers (1, &self->renderbuffer);
+    glBindRenderbuffer (GL_RENDERBUFFER, self->renderbuffer);
+    glRenderbufferStorage (GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+    glBindRenderbuffer (GL_RENDERBUFFER, 0);
+
+    glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, self->renderbuffer);
+  }
+
+  status = glCheckFramebufferStatus (GL_FRAMEBUFFER);
+  if (status != GL_FRAMEBUFFER_COMPLETE)
+    g_critical ("Framebuffer not complete: %d", (int) status);
+
+  glBindTexture (GL_TEXTURE_2D, 0);
+
+  glBindFramebuffer (GL_FRAMEBUFFER, self->fbo);
+
+  glClearColor (0, 0, 0, 0);
+  glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+static GLuint
+gl_create_shader (void)
+{
+  static const char *VERTEX_SHADER = "#version 330 core\n\
+    layout (location = 0) in vec2 position;\n\
+    out vec2 v_texCoord;\n\
+    void main() {\n\
+      gl_Position = vec4(position * 2.0 - vec2(1.0), 0.0, 1.0);\n\
+      v_texCoord = position;\n\
+    }";
+
+  static const char *FRAGMENT_SHADER = "#version 330 core\n\
+    in vec2 v_texCoord;\n\
+    out vec4 outputColor;\n\
+    uniform sampler2D tex;\n\
+    void main() {\n\
+      outputColor = texture(tex, v_texCoord);\n\
+    }";
+
+  GLuint vertex, fragment, program;
+  GLint success;
+
+  vertex = glCreateShader (GL_VERTEX_SHADER);
+  glShaderSource (vertex, 1, &VERTEX_SHADER, NULL);
+  glCompileShader (vertex);
+
+  glGetShaderiv (vertex, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    char log[512];
+    glGetShaderInfoLog (vertex, 512, NULL, log);
+    g_error ("Failed to compile vertex shader: %s", log);
+  }
+
+  fragment = glCreateShader (GL_FRAGMENT_SHADER);
+  glShaderSource (fragment, 1, &FRAGMENT_SHADER, NULL);
+  glCompileShader (fragment);
+
+  glGetShaderiv (fragment, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    char log[512];
+    glGetShaderInfoLog (fragment, 512, NULL, log);
+    g_error ("Failed to compile fragment shader: %s", log);
+  }
+
+  program = glCreateProgram ();
+  glAttachShader (program, vertex);
+  glAttachShader (program, fragment);
+  glLinkProgram (program);
+
+  glGetProgramiv (program, GL_LINK_STATUS, &success);
+  if (!success) {
+    char log[512];
+    glGetProgramInfoLog (program, 512, NULL, log);
+    g_error ("Failed to link program: %s", log);
+  }
+
+  glDeleteShader (vertex);
+  glDeleteShader (fragment);
+
+  return program;
+}
+
+static void
+gl_realize (Mupen64PlusCore *self)
+{
+  static float VERTICES[] = {
+     0, 0,
+     0, 1,
+     1, 1,
+     1, 0,
+  };
+  static guint INDICES[] = {
+    0, 1, 2,
+    2, 3, 0
+  };
+
+  core->program = gl_create_shader ();
+
+  glGenVertexArrays (1, &self->vao);
+  glBindVertexArray (self->vao);
+
+  glGenBuffers (1, &self->vbo);
+  glBindBuffer (GL_ARRAY_BUFFER, self->vbo);
+  glBufferData (GL_ARRAY_BUFFER, sizeof (VERTICES), VERTICES, GL_STATIC_DRAW);
+
+  glGenBuffers (1, &self->ebo);
+  glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, self->ebo);
+  glBufferData (GL_ELEMENT_ARRAY_BUFFER, sizeof (INDICES), INDICES, GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray (0);
+  glVertexAttribPointer (0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+
+  glBindBuffer (GL_ARRAY_BUFFER, 0);
+
+  glBindVertexArray (0);
+  glUseProgram (0);
+
+  glGenFramebuffers (1, &self->fbo);
+}
+
+static void
+gl_unrealize (Mupen64PlusCore *self)
+{
+  glDeleteVertexArrays (1, &self->vao);
+  glDeleteBuffers (1, &self->vbo);
+  glDeleteBuffers (1, &self->ebo);
+
+  glDeleteTextures (1, &self->texture);
+  glDeleteRenderbuffers (1, &self->renderbuffer);
+  glDeleteFramebuffers (1, &self->fbo);
+
+  glDeleteProgram (self->program);
+
+  self->vao = self->vbo = self->ebo = 0;
+  self->texture = self->renderbuffer = self->fbo = 0;
+  self->program = 0;
+}
+
+static void
+gl_blit_contents (Mupen64PlusCore *self)
+{
+  // Remember old state
+  GLint tex, active, vao, fbo, program;
+  glGetIntegerv (GL_TEXTURE_BINDING_2D, &tex);
+  glGetIntegerv (GL_ACTIVE_TEXTURE, &active);
+  glGetIntegerv (GL_VERTEX_ARRAY_BINDING, &vao);
+  glGetIntegerv (GL_DRAW_FRAMEBUFFER_BINDING, &fbo);
+  glGetIntegerv (GL_CURRENT_PROGRAM, &program);
+
+  glUseProgram (self->program);
+
+  glBindFramebuffer (GL_DRAW_FRAMEBUFFER, hs_gl_context_get_default_framebuffer (self->context));
+  glViewport (0, 0, self->width, self->height);
+
+  glClearColor (0, 0, 0, 0);
+  glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  glActiveTexture (GL_TEXTURE0);
+  glBindTexture (GL_TEXTURE_2D, self->texture);
+
+  glBindVertexArray (self->vao);
+  glDrawElements (GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+  // Then restore it, since the GFX plugin will expect that to still be there
+  glBindVertexArray (vao);
+  glBindTexture (GL_TEXTURE_2D, tex);
+  glActiveTexture (active);
+  glBindFramebuffer (GL_DRAW_FRAMEBUFFER, fbo);
+  glUseProgram (program);
+}
+
 m64p_error
 video_init (void)
 {
@@ -254,6 +552,8 @@ video_init (void)
 m64p_error
 video_quit (void)
 {
+  gl_unrealize (core);
+
   g_mutex_lock (&core->video_mutex);
   hs_gl_context_unrealize (core->context);
   core->realized = FALSE;
@@ -290,14 +590,9 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
     int minor = core->gl_attrs[M64P_GL_CONTEXT_MINOR_VERSION - 1];
     gboolean is_gles = core->gl_attrs[M64P_GL_CONTEXT_PROFILE_MASK - 1] == M64P_GL_CONTEXT_PROFILE_ES;
 
-    HsGLFlags flags = HS_GL_FLAGS_FLIPPED;
-
-    if (core->gl_attrs[M64P_GL_DEPTH_SIZE - 1] > 0)
-      flags |= HS_GL_FLAGS_DEPTH;
-
     core->context = hs_core_create_gl_context (HS_CORE (core),
                                                is_gles ? HS_GL_API_GLES : HS_GL_API_GL,
-                                               major, minor, flags);
+                                               major, minor, HS_GL_FLAGS_FLIPPED);
 
     core->realized = FALSE;
   }
@@ -313,12 +608,17 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
       return M64ERR_SYSTEM_FAIL;
     }
 
+    fetch_gl_functions ();
+    gl_realize (core);
+
     core->realized = TRUE;
   }
 
   hs_gl_context_set_size (core->context, width, height);
+  gl_resize (core, width, height);
   core->width = width;
   core->height = height;
+
   g_mutex_unlock (&core->video_mutex);
 
   return M64ERR_SUCCESS;
@@ -378,6 +678,7 @@ video_gl_swap_buf (void)
 
   if (core->pending_resize) {
     hs_gl_context_set_size (core->context, core->pending_width, core->pending_height);
+    gl_resize (core, core->pending_width, core->pending_height);
 
     core->width = core->pending_width;
     core->height = core->pending_height;
@@ -397,6 +698,7 @@ video_gl_swap_buf (void)
     core->interlacing = HS_INTERLACING_NONE;
   }
 
+  gl_blit_contents (core);
   hs_gl_context_swap_buffers (core->context);
 
   g_mutex_unlock (&core->video_mutex);
@@ -423,6 +725,7 @@ video_resize_window (int width, int height)
 {
   g_mutex_lock (&core->video_mutex);
   hs_gl_context_set_size (core->context, width, height);
+  gl_resize (core, width, height);
   core->width = width;
   core->height = height;
   g_mutex_unlock (&core->video_mutex);
@@ -433,13 +736,7 @@ video_resize_window (int width, int height)
 uint32_t
 video_gl_get_default_framebuffer (void)
 {
-  uint32_t ret;
-
-  g_mutex_lock (&core->video_mutex);
-  ret = hs_gl_context_get_default_framebuffer (core->context);
-  g_mutex_unlock (&core->video_mutex);
-
-  return ret;
+  return core->fbo;
 }
 
 m64p_error
