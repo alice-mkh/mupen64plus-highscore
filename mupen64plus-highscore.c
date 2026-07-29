@@ -72,7 +72,9 @@ static PFNGLDELETERENDERBUFFERSPROC     glDeleteRenderbuffers;
 static PFNGLDELETESHADERPROC            glDeleteShader;
 static PFNGLDELETETEXTURESPROC          glDeleteTextures;
 static PFNGLDELETEVERTEXARRAYSPROC      glDeleteVertexArrays;
+static PFNGLDISABLEPROC                 glDisable;
 static PFNGLDRAWELEMENTSPROC            glDrawElements;
+static PFNGLENABLEPROC                  glEnable;
 static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray;
 static PFNGLFRAMEBUFFERTEXTURE2DPROC    glFramebufferTexture2D;
 static PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer;
@@ -86,6 +88,7 @@ static PFNGLGETPROGRAMIVPROC            glGetProgramiv;
 static PFNGLGETPROGRAMINFOLOGPROC       glGetProgramInfoLog;
 static PFNGLGETSHADERIVPROC             glGetShaderiv;
 static PFNGLGETSHADERINFOLOGPROC        glGetShaderInfoLog;
+static PFNGLISENABLEDPROC               glIsEnabled;
 static PFNGLLINKPROGRAMPROC             glLinkProgram;
 static PFNGLRENDERBUFFERSTORAGEPROC     glRenderbufferStorage;
 static PFNGLSHADERSOURCEPROC            glShaderSource;
@@ -313,7 +316,9 @@ fetch_gl_functions (void)
   glDeleteShader            = hs_gl_context_get_proc_address (core->context, "glDeleteShader");
   glDeleteTextures          = hs_gl_context_get_proc_address (core->context, "glDeleteTextures");
   glDeleteVertexArrays      = hs_gl_context_get_proc_address (core->context, "glDeleteVertexArrays");
+  glDisable                 = hs_gl_context_get_proc_address (core->context, "glDisable");
   glDrawElements            = hs_gl_context_get_proc_address (core->context, "glDrawElements");
+  glEnable                  = hs_gl_context_get_proc_address (core->context, "glEnable");
   glEnableVertexAttribArray = hs_gl_context_get_proc_address (core->context, "glEnableVertexAttribArray");
   glFramebufferTexture2D    = hs_gl_context_get_proc_address (core->context, "glFramebufferTexture2D");
   glFramebufferRenderbuffer = hs_gl_context_get_proc_address (core->context, "glFramebufferRenderbuffer");
@@ -327,6 +332,7 @@ fetch_gl_functions (void)
   glGetProgramInfoLog       = hs_gl_context_get_proc_address (core->context, "glGetProgramInfoLog");
   glGetShaderiv             = hs_gl_context_get_proc_address (core->context, "glGetShaderiv");
   glGetShaderInfoLog        = hs_gl_context_get_proc_address (core->context, "glGetShaderInfoLog");
+  glIsEnabled               = hs_gl_context_get_proc_address (core->context, "glIsEnabled");
   glLinkProgram             = hs_gl_context_get_proc_address (core->context, "glLinkProgram");
   glRenderbufferStorage     = hs_gl_context_get_proc_address (core->context, "glRenderbufferStorage");
   glShaderSource            = hs_gl_context_get_proc_address (core->context, "glShaderSource");
@@ -506,11 +512,13 @@ gl_blit_contents (Mupen64PlusCore *self)
 {
   // Remember old state
   GLint tex, active, vao, fbo, program;
+  GLboolean scissor;
   glGetIntegerv (GL_TEXTURE_BINDING_2D, &tex);
   glGetIntegerv (GL_ACTIVE_TEXTURE, &active);
   glGetIntegerv (GL_VERTEX_ARRAY_BINDING, &vao);
   glGetIntegerv (GL_DRAW_FRAMEBUFFER_BINDING, &fbo);
   glGetIntegerv (GL_CURRENT_PROGRAM, &program);
+  scissor = glIsEnabled (GL_SCISSOR_TEST);
 
   glUseProgram (self->program);
 
@@ -523,10 +531,16 @@ gl_blit_contents (Mupen64PlusCore *self)
   glActiveTexture (GL_TEXTURE0);
   glBindTexture (GL_TEXTURE_2D, self->texture);
 
+  glDisable (GL_SCISSOR_TEST);
+
   glBindVertexArray (self->vao);
   glDrawElements (GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
   // Then restore it, since the GFX plugin will expect that to still be there
+
+  if (scissor)
+    glEnable (GL_DEPTH_TEST);
+
   glBindVertexArray (vao);
   glBindTexture (GL_TEXTURE_2D, tex);
   glActiveTexture (active);
