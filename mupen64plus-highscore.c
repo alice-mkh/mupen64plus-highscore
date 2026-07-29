@@ -566,7 +566,8 @@ video_init (void)
 m64p_error
 video_quit (void)
 {
-  gl_unrealize (core);
+  if (core->mode == HS_NINTENDO_64_HLE)
+    gl_unrealize (core);
 
   g_mutex_lock (&core->video_mutex);
   hs_gl_context_unrealize (core->context);
@@ -622,14 +623,19 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
       return M64ERR_SYSTEM_FAIL;
     }
 
-    fetch_gl_functions ();
-    gl_realize (core);
+    if (core->mode == HS_NINTENDO_64_HLE) {
+      fetch_gl_functions ();
+      gl_realize (core);
+    }
 
     core->realized = TRUE;
   }
 
   hs_gl_context_set_size (core->context, width, height);
-  gl_resize (core, width, height);
+
+  if (core->mode == HS_NINTENDO_64_HLE)
+    gl_resize (core, width, height);
+
   core->width = width;
   core->height = height;
 
@@ -692,7 +698,9 @@ video_gl_swap_buf (void)
 
   if (core->pending_resize) {
     hs_gl_context_set_size (core->context, core->pending_width, core->pending_height);
-    gl_resize (core, core->pending_width, core->pending_height);
+
+    if (core->mode == HS_NINTENDO_64_HLE)
+      gl_resize (core, core->pending_width, core->pending_height);
 
     core->width = core->pending_width;
     core->height = core->pending_height;
@@ -712,7 +720,9 @@ video_gl_swap_buf (void)
     core->interlacing = HS_INTERLACING_NONE;
   }
 
-  gl_blit_contents (core);
+  if (core->mode == HS_NINTENDO_64_HLE)
+    gl_blit_contents (core);
+
   hs_gl_context_swap_buffers (core->context);
 
   g_mutex_unlock (&core->video_mutex);
@@ -739,7 +749,10 @@ video_resize_window (int width, int height)
 {
   g_mutex_lock (&core->video_mutex);
   hs_gl_context_set_size (core->context, width, height);
-  gl_resize (core, width, height);
+
+  if (core->mode == HS_NINTENDO_64_HLE)
+    gl_resize (core, width, height);
+
   core->width = width;
   core->height = height;
   g_mutex_unlock (&core->video_mutex);
@@ -750,7 +763,17 @@ video_resize_window (int width, int height)
 uint32_t
 video_gl_get_default_framebuffer (void)
 {
-  return core->fbo;
+  uint32_t ret;
+
+  if (core->mode == HS_NINTENDO_64_HLE) {
+    ret = core->fbo;
+  } else {
+    g_mutex_lock (&core->video_mutex);
+    ret = hs_gl_context_get_default_framebuffer (core->context);
+    g_mutex_unlock (&core->video_mutex);
+  }
+
+  return ret;
 }
 
 m64p_error
