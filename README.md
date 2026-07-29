@@ -24,15 +24,24 @@ The RDP plugin is also ported to C++ and Meson, simply for the sake of convenien
 
 The core relies on these modifcations to work correctly, and will not work with RMG versions.
 
-# HLE plugins
+## HLE plugins
 
 Alternatively, the core can use [mupen64plus-rsp-hle](https://github.com/mupen64plus/mupen64plus-rsp-hle)
 and [GLideN64](https://github.com/gonetz/GLideN64). Both are upstream, unmodified.
+
+GLideN64 settings have been tweaked to resemble parallel-RDP look a bit, specifically:
+
+- Disable upscaling and letterboxing (to use the same 640x240 resolution as parallel-RDP, and
+  640x480 when the game requests interlacing, since GLideN64 doesn't do interlacing itself
+- Use N64 3-point texture filtering, so that those stairs in Kakariko in OoT look right
+- Enable multisampling to make the picture softer
 
 ---
 
 Which set of plugins to use will be decided by the frontend, presented as an accurate/performance mode
 setting and defaulting to accurate (LLE) whenever possible. Whether it's possible is decided by the
 frontend too.
+
+The plugin settings are hardcoded and cannot be changed externally.
 
 Other plugins, like angrylion-rdp-plus, are not supported.
