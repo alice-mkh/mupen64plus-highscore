@@ -33,6 +33,10 @@
 #define VI_CURRENT_LINE_REG 4
 #define VI_SERRATE_FLAG (1 << 6)
 
+#define WIDTH 640
+#define HEIGHT_NTSC 240
+#define HEIGHT_PAL 288
+
 #define N_GL_ATTRS M64P_GL_CONTEXT_PROFILE_MASK
 
 static ptr_CoreStartup             CoreStartup;
@@ -82,12 +86,13 @@ static PFNGLGENBUFFERSPROC              glGenBuffers;
 static PFNGLGENFRAMEBUFFERSPROC         glGenFramebuffers;
 static PFNGLGENRENDERBUFFERSPROC        glGenRenderbuffers;
 static PFNGLGENTEXTURESPROC             glGenTextures;
-static PFNGLGETINTEGERVPROC             glGetIntegerv;
 static PFNGLGENVERTEXARRAYSPROC         glGenVertexArrays;
+static PFNGLGETINTEGERVPROC             glGetIntegerv;
 static PFNGLGETPROGRAMIVPROC            glGetProgramiv;
 static PFNGLGETPROGRAMINFOLOGPROC       glGetProgramInfoLog;
 static PFNGLGETSHADERIVPROC             glGetShaderiv;
 static PFNGLGETSHADERINFOLOGPROC        glGetShaderInfoLog;
+static PFNGLGETUNIFORMLOCATIONPROC      glGetUniformLocation;
 static PFNGLISENABLEDPROC               glIsEnabled;
 static PFNGLLINKPROGRAMPROC             glLinkProgram;
 static PFNGLRENDERBUFFERSTORAGEPROC     glRenderbufferStorage;
@@ -97,6 +102,8 @@ static PFNGLTEXPARAMETERIPROC           glTexParameteri;
 static PFNGLUSEPROGRAMPROC              glUseProgram;
 static PFNGLVERTEXATTRIBPOINTERPROC     glVertexAttribPointer;
 static PFNGLVIEWPORTPROC                glViewport;
+static PFNGLUNIFORM1FPROC               glUniform1f;
+static PFNGLUNIFORM1IPROC               glUniform1i;
 
 typedef void (*HsSampleRateChangedCallback) (HsCore *core, double sample_rate);
 typedef void (*hs_setup_audio_t) (HsCore *core, HsSampleRateChangedCallback sample_rate_cb);
@@ -332,6 +339,7 @@ fetch_gl_functions (void)
   glGetProgramInfoLog       = hs_gl_context_get_proc_address (core->context, "glGetProgramInfoLog");
   glGetShaderiv             = hs_gl_context_get_proc_address (core->context, "glGetShaderiv");
   glGetShaderInfoLog        = hs_gl_context_get_proc_address (core->context, "glGetShaderInfoLog");
+  glGetUniformLocation      = hs_gl_context_get_proc_address (core->context, "glGetUniformLocation");
   glIsEnabled               = hs_gl_context_get_proc_address (core->context, "glIsEnabled");
   glLinkProgram             = hs_gl_context_get_proc_address (core->context, "glLinkProgram");
   glRenderbufferStorage     = hs_gl_context_get_proc_address (core->context, "glRenderbufferStorage");
@@ -341,6 +349,16 @@ fetch_gl_functions (void)
   glUseProgram              = hs_gl_context_get_proc_address (core->context, "glUseProgram");
   glVertexAttribPointer     = hs_gl_context_get_proc_address (core->context, "glVertexAttribPointer");
   glViewport                = hs_gl_context_get_proc_address (core->context, "glViewport");
+  glUniform1f               = hs_gl_context_get_proc_address (core->context, "glUniform1f");
+  glUniform1i               = hs_gl_context_get_proc_address (core->context, "glUniform1i");
+}
+
+static int
+get_base_height (Mupen64PlusCore *self)
+{
+  m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
+
+  return (system_type == SYSTEM_PAL) ? HEIGHT_PAL : HEIGHT_NTSC;
 }
 
 static void
@@ -404,8 +422,13 @@ gl_create_shader (void)
     in vec2 v_texCoord;\n\
     out vec4 outputColor;\n\
     uniform sampler2D tex;\n\
+    uniform float height;\n\
+    uniform int field;\n\
     void main() {\n\
-      outputColor = texture(tex, v_texCoord);\n\
+      vec2 uv = v_texCoord;\n\
+      if (field >= 0)\n\
+        uv.y = (floor(uv.y * height + 0.01) * 2.0 + 1.5 - float(field)) / height * 0.5;\n\
+      outputColor = texture(tex, uv);\n\
     }";
 
   GLuint vertex, fragment, program;
@@ -522,8 +545,19 @@ gl_blit_contents (Mupen64PlusCore *self)
 
   glUseProgram (self->program);
 
+  GLint loc = glGetUniformLocation (self->program, "field");
+  glUniform1i (loc, self->interlacing);
+
+  int height = self->height;
+
+  if (self->interlacing >= 0)
+    height /= 2;
+
+  loc = glGetUniformLocation (self->program, "height");
+  glUniform1f (loc, height);
+
   glBindFramebuffer (GL_DRAW_FRAMEBUFFER, hs_gl_context_get_default_framebuffer (self->context));
-  glViewport (0, 0, self->width, self->height);
+  glViewport (0, 0, self->width, height);
 
   glClearColor (0, 0, 0, 0);
   glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -546,6 +580,8 @@ gl_blit_contents (Mupen64PlusCore *self)
   glActiveTexture (active);
   glBindFramebuffer (GL_DRAW_FRAMEBUFFER, fbo);
   glUseProgram (program);
+
+  glViewport (0, 0, self->width, self->height);
 }
 
 m64p_error
@@ -631,7 +667,8 @@ video_set_mode (int width, int height, int bpp, int mode, int flags)
     core->realized = TRUE;
   }
 
-  hs_gl_context_set_size (core->context, width, height);
+  int base_height = get_base_height (core);
+  hs_gl_context_set_size (core->context, WIDTH, base_height);
 
   if (core->mode == HS_NINTENDO_64_HLE)
     gl_resize (core, width, height);
@@ -694,11 +731,17 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
 m64p_error
 video_gl_swap_buf (void)
 {
+  g_mutex_lock (&core->savestate_mutex);
+
+  if (core->savestate_in_progress && !core->savestate_load) {
+    g_mutex_unlock (&core->savestate_mutex);
+    return M64ERR_SUCCESS;
+  }
+
+  g_mutex_unlock (&core->savestate_mutex);
   g_mutex_lock (&core->video_mutex);
 
   if (core->pending_resize) {
-    hs_gl_context_set_size (core->context, core->pending_width, core->pending_height);
-
     if (core->mode == HS_NINTENDO_64_HLE)
       gl_resize (core, core->pending_width, core->pending_height);
 
@@ -710,8 +753,7 @@ video_gl_swap_buf (void)
   gboolean interlaced = core->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG;
   gboolean is_odd = (core->vi_regs[VI_CURRENT_LINE_REG] & 1) > 0;
 
-  // GLideN64 always outputs progressive video
-  if (interlaced && core->mode == HS_NINTENDO_64_LLE) {
+  if (interlaced) {
     if (is_odd)
       core->interlacing = HS_INTERLACING_ODD_FIELD;
     else
@@ -748,7 +790,6 @@ m64p_error
 video_resize_window (int width, int height)
 {
   g_mutex_lock (&core->video_mutex);
-  hs_gl_context_set_size (core->context, width, height);
 
   if (core->mode == HS_NINTENDO_64_HLE)
     gl_resize (core, width, height);
@@ -1287,6 +1328,16 @@ static void
 mupen64plus_core_run_frame (HsCore *core)
 {
   Mupen64PlusCore *self = MUPEN64PLUS_CORE (core);
+
+  g_mutex_lock (&self->savestate_mutex);
+
+  if (self->savestate_in_progress && !self->savestate_load) {
+    g_mutex_unlock (&self->savestate_mutex);
+    return;
+  }
+
+  g_mutex_unlock (&self->savestate_mutex);
+
   m64p_system_type system_type = rom_country_code_to_system_type (self->rom_header.Country_code);
 
   g_mutex_lock (&self->audio_mutex);
@@ -1303,10 +1354,10 @@ mupen64plus_core_run_frame (HsCore *core)
   int width = self->width;
   int height = self->height;
 
-  int base_height = (system_type == SYSTEM_PAL) ? 288 : 240;
+  int base_height = get_base_height (self);
 
   if (!self->pending_resize && self->vi_regs[VI_STATUS_REG] != 0) {
-    int new_width = 640;
+    int new_width = WIDTH;
     int new_height = base_height;
 
     if (self->mode == HS_NINTENDO_64_HLE && self->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG)
@@ -1334,7 +1385,7 @@ mupen64plus_core_run_frame (HsCore *core)
       }
     }
   } else if (self->vi_regs[VI_STATUS_REG] == 0 || width == 0 || height == 0) {
-    width = 640;
+    width = WIDTH;
     height = base_height;
   }
 
@@ -1347,9 +1398,7 @@ mupen64plus_core_run_frame (HsCore *core)
 
   g_mutex_lock (&self->video_mutex);
 
-  hs_gl_context_set_overscan (self->context,
-                              &HS_BORDER_INIT (OVERSCAN_H * width / 640,
-                                               OVERSCAN_V * height / base_height));
+  hs_gl_context_set_overscan (self->context, &HS_BORDER_INIT (OVERSCAN_H, OVERSCAN_V));
 
   hs_gl_context_set_interlacing (self->context, self->interlacing);
 
@@ -1633,10 +1682,10 @@ mupen64plus_core_get_aspect_ratio (HsCore *core)
 
   if (system_type == SYSTEM_PAL) {
     par = 6.0 / 5.0;
-    height = 288;
+    height = HEIGHT_PAL;
   } else {
     par = 120.0 / 119.0;
-    height = 240;
+    height = HEIGHT_NTSC;
   }
 
   return 320.0 / height * par;
