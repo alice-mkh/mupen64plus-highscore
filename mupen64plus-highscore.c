@@ -735,6 +735,9 @@ video_gl_swap_buf (void)
 
   if (core->savestate_in_progress && !core->savestate_load) {
     g_mutex_unlock (&core->savestate_mutex);
+
+    g_cond_signal (&core->frame_cond);
+
     return M64ERR_SUCCESS;
   }
 
@@ -1333,6 +1336,12 @@ mupen64plus_core_run_frame (HsCore *core)
 
   if (self->savestate_in_progress && !self->savestate_load) {
     g_mutex_unlock (&self->savestate_mutex);
+
+    // Wait until swap_buffers() so that we have a picture ready to go
+    g_mutex_lock (&self->frame_mutex);
+    g_cond_wait (&self->frame_cond, &self->frame_mutex);
+    g_mutex_unlock (&self->frame_mutex);
+
     return;
   }
 
