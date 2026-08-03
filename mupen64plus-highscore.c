@@ -573,7 +573,7 @@ gl_blit_contents (Mupen64PlusCore *self)
   // Then restore it, since the GFX plugin will expect that to still be there
 
   if (scissor)
-    glEnable (GL_DEPTH_TEST);
+    glEnable (GL_SCISSOR_TEST);
 
   glBindVertexArray (vao);
   glBindTexture (GL_TEXTURE_2D, tex);
