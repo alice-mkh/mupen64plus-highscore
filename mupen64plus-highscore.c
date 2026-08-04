@@ -15,6 +15,7 @@
 
 #include <ctype.h>
 #include <dlfcn.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -32,6 +33,8 @@
 #define VI_STATUS_REG 0
 #define VI_CURRENT_LINE_REG 4
 #define VI_V_SYNC_REG 6
+#define VI_H_SYNC_REG 7
+#define VI_LEAP_REG 8
 
 #define VI_SERRATE_FLAG (1 << 6)
 
@@ -166,6 +169,7 @@ struct _Mupen64PlusCore
 
   guint32 *vi_regs;
   float next_colorburst_offset;
+  int n_sync;
 
   HsNintendo64EmulationMode mode;
   HsInterlacingMode interlacing;
@@ -1422,34 +1426,31 @@ mupen64plus_core_run_frame (HsCore *core)
 
   hs_gl_context_set_interlacing (self->context, self->interlacing);
 
-  if (system_type == SYSTEM_PAL) {
-    hs_gl_context_set_colorburst (self->context, 1.5 * width / 320.0, 0.7516, self->next_colorburst_offset);
+  // Calculate colorburst
+  // Reference: https://n64brew.dev/wiki/Video_Interface
+  g_assert (self->n_sync < 5);
 
-    if (self->interlacing != HS_INTERLACING_ODD_FIELD) {
-      self->next_colorburst_offset += 0.2508;
+  int h_total = (self->vi_regs[VI_H_SYNC_REG] & 0xFFF) + 1;
+  int v_total = (self->vi_regs[VI_V_SYNC_REG] & 0x3FF) + 1;
+  int leap_pattern = (self->vi_regs[VI_H_SYNC_REG] >> 16) & 0x1F;
+  gboolean is_leap_b = ((leap_pattern >> self->n_sync) & 1) > 0;
 
-      if (self->next_colorburst_offset > 2499.9)
-       self->next_colorburst_offset = 0;
-    }
-  } else if (system_type == SYSTEM_MPAL) {
-    hs_gl_context_set_colorburst (self->context, 1.875 * width / 320.0, 0.25, self->next_colorburst_offset);
+  int leap_a = ((self->vi_regs[VI_LEAP_REG] >> 16) & 0xFFF) + 1;
+  int leap_b = (self->vi_regs[VI_LEAP_REG] & 0xFFF) + 1;
 
-    if (self->interlacing != HS_INTERLACING_ODD_FIELD) {
-      self->next_colorburst_offset += 0.25;
+  double vi_clocks = (system_type == SYSTEM_PAL) ? 11.2 : 13.6;
+  double line_remainder = fmod (h_total / vi_clocks, 1.0);
 
-      if (self->next_colorburst_offset > 0.9)
-       self->next_colorburst_offset = 0;
-    }
-  } else {
-    hs_gl_context_set_colorburst (self->context, 1.875 * width / 320.0, 0.5, self->next_colorburst_offset);
+  double lines = (double) v_total / 2.0;
 
-    if (self->interlacing != HS_INTERLACING_ODD_FIELD) {
-      self->next_colorburst_offset += 0.5;
+  int total_dots = h_total * (lines - 1) + (is_leap_b ? leap_b : leap_a);
 
-      if (self->next_colorburst_offset > 0.9)
-       self->next_colorburst_offset = 0;
-    }
-  }
+  double frame_offset = fmod (total_dots / vi_clocks, 1.0);
+
+  hs_gl_context_set_colorburst (self->context, vi_clocks / 4.0, line_remainder, self->next_colorburst_offset);
+
+  self->next_colorburst_offset += frame_offset;
+  self->n_sync = (self->n_sync + 1) % 5;
 
   g_mutex_unlock (&self->video_mutex);
 
@@ -1467,8 +1468,10 @@ mupen64plus_core_reset (HsCore *core, gboolean hard, GError **error)
     return FALSE;
   }
 
-  if (hard)
+  if (hard) {
     self->next_colorburst_offset = 0;
+    self->n_sync = 0;
+  }
 
   return TRUE;
 }
