@@ -1426,7 +1426,6 @@ mupen64plus_core_run_frame (HsCore *core)
   g_mutex_lock (&self->video_mutex);
 
   hs_gl_context_set_overscan (self->context, &HS_BORDER_INIT (OVERSCAN_H, OVERSCAN_V));
-
   hs_gl_context_set_interlacing (self->context, self->interlacing);
 
   // Calculate colorburst
@@ -1442,12 +1441,11 @@ mupen64plus_core_run_frame (HsCore *core)
   int leap_b = (self->vi_regs[VI_LEAP_REG] & 0xFFF) + 1;
 
   double vi_clocks = (system_type == SYSTEM_PAL) ? 11.2 : 13.6;
-  double line_remainder = fmod (h_total / vi_clocks, 1.0);
 
   double lines = (double) v_total / 2.0;
+  double total_dots = h_total * (lines - 1) + (is_leap_b ? leap_b : leap_a);
 
-  int total_dots = h_total * (lines - 1) + (is_leap_b ? leap_b : leap_a);
-
+  double line_remainder = fmod (h_total / vi_clocks, 1.0);
   double frame_offset = fmod (total_dots / vi_clocks, 1.0);
 
   hs_gl_context_set_colorburst (self->context, vi_clocks / 4.0, line_remainder, self->next_colorburst_offset);
