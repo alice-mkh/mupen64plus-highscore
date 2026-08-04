@@ -31,6 +31,8 @@
 
 #define VI_STATUS_REG 0
 #define VI_CURRENT_LINE_REG 4
+#define VI_V_SYNC_REG 6
+
 #define VI_SERRATE_FLAG (1 << 6)
 
 #define WIDTH 640
@@ -728,6 +730,15 @@ video_gl_get_attr (m64p_GLattr attr, int *value)
   return M64ERR_SUCCESS;
 }
 
+static gboolean
+get_interlaced (Mupen64PlusCore *self)
+{
+  gboolean serrate = core->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG;
+  int v_total = core->vi_regs[VI_V_SYNC_REG] & 0x3FF;
+
+  return serrate && (v_total + 1) % 2 == 1;
+}
+
 m64p_error
 video_gl_swap_buf (void)
 {
@@ -753,7 +764,7 @@ video_gl_swap_buf (void)
     core->pending_resize = FALSE;
   }
 
-  gboolean interlaced = core->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG;
+  gboolean interlaced = get_interlaced (core);
   gboolean is_odd = (core->vi_regs[VI_CURRENT_LINE_REG] & 1) > 0;
 
   if (interlaced) {
@@ -1369,7 +1380,7 @@ mupen64plus_core_run_frame (HsCore *core)
     int new_width = WIDTH;
     int new_height = base_height;
 
-    if (self->mode == HS_NINTENDO_64_HLE && self->vi_regs[VI_STATUS_REG] & VI_SERRATE_FLAG)
+    if (self->mode == HS_NINTENDO_64_HLE && get_interlaced (core))
       new_height *= 2.0;
 
     if (new_width != width || new_height != height) {
