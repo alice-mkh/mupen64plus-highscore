@@ -1450,7 +1450,7 @@ mupen64plus_core_run_frame (HsCore *core)
 
   hs_gl_context_set_colorburst (self->context, vi_clocks / 4.0, line_remainder, self->next_colorburst_offset);
 
-  self->next_colorburst_offset += frame_offset;
+  self->next_colorburst_offset = fmod (self->next_colorburst_offset + frame_offset, 1.0);
   self->n_sync = (self->n_sync + 1) % 5;
 
   g_mutex_unlock (&self->video_mutex);
