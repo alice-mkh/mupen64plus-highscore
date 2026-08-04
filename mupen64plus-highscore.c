@@ -253,8 +253,11 @@ finish_savestate_cb (Mupen64PlusCore *self)
   int result = self->savestate_result;
 
   if (result) {
-    if (self->savestate_load)
+    if (self->savestate_load) {
+      g_mutex_lock (&self->video_mutex);
       self->next_colorburst_offset = hs_core_get_colorburst_offset (HS_CORE (self));
+      g_mutex_unlock (&self->video_mutex);
+    }
 
     self->savestate_callback (HS_CORE (self), NULL);
   } else {
@@ -1469,8 +1472,10 @@ mupen64plus_core_reset (HsCore *core, gboolean hard, GError **error)
   }
 
   if (hard) {
+    g_mutex_lock (&self->video_mutex);
     self->next_colorburst_offset = 0;
     self->n_sync = 0;
+    g_mutex_unlock (&self->video_mutex);
   }
 
   return TRUE;
