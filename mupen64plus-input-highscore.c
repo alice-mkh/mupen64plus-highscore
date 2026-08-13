@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2023-2026 Alice Mikhaylenko <alicem@gnome.org>
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+
 #include <highscore/libhighscore.h>
 #include <stdlib.h>
 #include <math.h>

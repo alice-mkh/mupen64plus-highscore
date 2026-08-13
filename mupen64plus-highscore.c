@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023-2025 Alice Mikhaylenko <alicem@gnome.org>
+ * Copyright (C) 2023-2026 Alice Mikhaylenko <alicem@gnome.org>
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
