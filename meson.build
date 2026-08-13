@@ -90,3 +90,8 @@ configure_file(
   install_dir: core_dir,
   install: true
 )
+
+install_data(
+  'LICENSES',
+  install_dir: core_dir
+)
