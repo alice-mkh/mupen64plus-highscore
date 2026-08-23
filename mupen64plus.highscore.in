@@ -5,5 +5,7 @@ Commit=@commit@
 Module=mupen64plus-highscore.so
 Authors=Hacktarux;The Mupen64Plus Development Team;
 Website=https://mupen64plus.org/
+SourceCode=https://github.com/highscore-emu/mupen64plus-highscore
+Issues=https://github.com/highscore-emu/mupen64plus-highscore/issues
 LicensePath=LICENSES
 Platforms=Nintendo64;
